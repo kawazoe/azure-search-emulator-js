@@ -1,0 +1,42 @@
+{
+  "name": "azure-search-emulator-js",
+  "version": "0.1.0",
+  "private": "true",
+  "description": "A javascript emulator for the Azure Cognitive Search API.",
+  "author": {
+    "name": "Etienne Maheu",
+    "email": "contact@etiennemaheu.com",
+    "url": "https://etiennemaheu.com"
+  },
+  "keywords": [
+    "azure",
+    "cognitive",
+    "search",
+    "api",
+    "emulator",
+    "mock",
+    "fake"
+  ],
+  "homepage": "https://github.com/kawazoe/azure-search-emulator-js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kawazoe/azure-search-emulator-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kawazoe/azure-search-emulator-js/issues"
+  },
+  "module": "azure-search-emulator.es.js",
+  "main": "azure-search-emulator.es.js",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/generate.js && rollup --config rollup.config.js",
+    "test": "node azure-search-filter.spec.js"
+  },
+  "devDependencies": {
+    "jison": "npm:jison-gho@^0.6.1-216",
+    "rollup": "^2.79.1",
+    "rollup-plugin-copy": "^3.4.0",
+    "rollup-plugin-terser": "^7.0.2"
+  }
+}
