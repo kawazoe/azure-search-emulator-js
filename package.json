@@ -31,7 +31,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/generate.js && rollup --config rollup.config.js",
-    "test": "node azure-search-filter.spec.js"
+    "test": "node query-filter.spec.js"
   },
   "devDependencies": {
     "jison": "npm:jison-gho@^0.6.1-216",

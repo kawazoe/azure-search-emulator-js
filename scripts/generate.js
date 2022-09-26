@@ -8,6 +8,6 @@ function generate(source, destination) {
     fs.writeFileSync(destination, parser, { encoding: 'utf-8' });
 }
 
-generate('azure-search-filter.jison', 'azure-search-filter.generated.js');
-generate('azure-search-orderby.jison', 'azure-search-orderby.generated.js');
-generate('azure-search-select.jison', 'azure-search-select.generated.js');
+generate('query-filter.jison', 'query-filter.generated.js');
+generate('query-orderby.jison', 'query-orderby.generated.js');
+generate('query-select.jison', 'query-select.generated.js');
