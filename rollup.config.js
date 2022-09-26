@@ -1,9 +1,16 @@
 import copy from 'rollup-plugin-copy';
+import typescript from '@rollup/plugin-typescript';
 import { terser } from 'rollup-plugin-terser';
 
 export default {
-  input: 'index.js',
+  input: 'index.ts',
   plugins: [
+    typescript({
+      compilerOptions: {
+        declaration: true,
+        declarationDir: "."
+      }
+    }),
     terser({
       format: {
         comments: false,
