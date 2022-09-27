@@ -31,7 +31,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/generate.js && rollup --config rollup.config.js",
-    "test": "node query-filter.spec.js"
+    "test": "node specs.js"
   },
   "devDependencies": {
     "@rollup/plugin-typescript": "^8.5.0",
@@ -41,5 +41,8 @@
     "rollup-plugin-terser": "^7.0.2",
     "tslib": "^2.4.0",
     "typescript": "^4.8.3"
+  },
+  "dependencies": {
+    "deepmerge": "^4.2.2"
   }
 }

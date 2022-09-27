@@ -1,3 +1,5 @@
+import type deepmerge from 'deepmerge';
+
 export interface JisonParserErrorHash {
   recoverable: boolean;
   destroy: () => void;
@@ -12,6 +14,20 @@ export interface JisonParserError {
   get message(): string | null | undefined;
   set message(msg);
 }
+
+type DeepMergeExtendedOptions = deepmerge.Options & {
+  isMergeableObject(value: unknown): boolean,
+  cloneUnlessOtherwiseSpecified(value: unknown, options: deepmerge.Options): unknown,
+};
+
+export type MergeDeepFunction = (target: Partial<unknown>, source: Partial<unknown>, options: DeepMergeExtendedOptions) => unknown;
+export type ParseFunction<TAst> = (
+  input: string,
+  ast: TAst,
+  mergeDeep: MergeDeepFunction,
+  mergeSequence: MergeSequenceFunction
+) => boolean;
+export type MergeSequenceFunction = (target: unknown[], source: unknown[], options: DeepMergeExtendedOptions) => unknown[];
 
 export interface OParser<TAst> {
   trace: () => {},
@@ -40,7 +56,7 @@ export interface OParser<TAst> {
   describeSymbol: (symbol: number) => string | null;
   collect_expected_token_set: (state: number, do_not_describe: boolean) => string[];
   parseError: (str: string, hash: JisonParserErrorHash, ExceptionClass?: Error) => void;
-  parse: (input: string, ast: TAst) => boolean;
+  parse: ParseFunction<TAst>
   originalParseError: (str: string, hash: JisonParserErrorHash, ExceptionClass?: Error) => void;
   originalQuoteName: (id_str: string) => string;
 }
@@ -53,7 +69,7 @@ export interface Parser<TAst> extends OParser<TAst> {
 export interface JisonParser<TAst> {
   parser: OParser<TAst>;
   Parser: Parser<TAst>;
-  parse: (input: string, ast: TAst) => boolean;
+  parse: ParseFunction<TAst>;
 }
 
 export type AstIdentifier = { type: 'IDENTIFIER', value: string };

@@ -1,5 +1,6 @@
 import { filter as parser } from './dist/azure-search-emulator.es.js';
 
+console.log('describe query-filter ast');
 console.log('='.repeat(70));
 
 let passed = 0;
@@ -9,9 +10,7 @@ function test(raw, target) {
     const message = (kind, ...rest) => console[kind](pad(`It should convert "${raw}"`, ' ', 60), ...rest);
 
     try {
-        const ast = {};
-        parser.parse(raw, ast);
-
+        const ast = parser.parse(raw);
         const actual = JSON.stringify(ast.value);
         const expected = JSON.stringify(target)
 

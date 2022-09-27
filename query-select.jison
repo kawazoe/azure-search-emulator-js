@@ -23,7 +23,7 @@
 %left FP_SEPARATOR LIST_SEPARATOR
 %token WILDCARD
 
-%parse-param ast
+%parse-param ast mergeDeep mergeSequence
 
 %ebnf
 
@@ -34,23 +34,58 @@
 /* Top-level rules */
 select_expression
     : WILDCARD EOF
-    { yy.ast.value = { type: "WILDCARD" } }
+    {
+        yy.ast.value = { type: "WILDCARD" };
+        yy.ast.apply = (input) => input;
+    }
     | variable (LIST_SEPARATOR variable)* EOF
-    { yy.ast.value = [$1, ...$2.map(([sep, clause]) => clause)] }
+    {
+        //
+        {
+        const mergeDeep = yy.mergeDeep;
+        const mergeSequence = yy.mergeSequence;
+        const keys = [$1, ...$2.map(([sep, clause]) => clause)];
+        const apply = (input) => keys
+            .reduce((acc, cur) => mergeDeep(
+                    acc,
+                    cur.apply(input),
+                    { arrayMerge: mergeSequence }
+                ),
+                {}
+            );
+        yy.ast.value = { type: "LIST", value: keys };
+        yy.ast.apply = apply;
+        }
+    }
     ;
 
 /* Shared base rules */
 variable
     : IDENTIFIER (FP_SEPARATOR IDENTIFIER)+
     {
-        $$ = {
-            type: "FIELD_PATH",
-            value: [
-                $1,
-                ...$2.map(([sep, node]) => node),
-            ],
-        };
+        //
+        {
+        const value = [
+            $1,
+            ...$2.map(([sep, node]) => node),
+        ];
+        const apply = (input, [first, ...rest]) => ({
+            [first]: rest.length
+                ? Array.isArray(input[first])
+                    ? input[first].map(v => apply(v, rest))
+                    : apply(input[first], rest)
+                : input[first]
+        });
+
+        $$ = { type: "FIELD_PATH", value, apply: (input) => apply(input, value) };
+        }
     }
     | IDENTIFIER
-    { $$ = { type: "IDENTIFIER", value: $1 } }
+    {
+        //
+        {
+        const value = $1;
+        $$ = { type: "IDENTIFIER", value, apply: (input) => ({ [value]: input[value] }) };
+        }
+    }
     ;
