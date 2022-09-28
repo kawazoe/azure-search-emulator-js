@@ -23,7 +23,7 @@
 %left FP_SEPARATOR LIST_SEPARATOR
 %token WILDCARD
 
-%parse-param ast mergeDeep mergeSequence
+%parse-param ast deps fns
 
 %ebnf
 
@@ -42,8 +42,7 @@ select_expression
     {
         //
         {
-        const mergeDeep = yy.mergeDeep;
-        const mergeSequence = yy.mergeSequence;
+        const { mergeDeep, mergeSequence } = yy.deps;
         const keys = [$1, ...$2.map(([sep, clause]) => clause)];
         const apply = (input) => keys
             .reduce((acc, cur) => mergeDeep(
@@ -65,19 +64,9 @@ variable
     {
         //
         {
-        const value = [
-            $1,
-            ...$2.map(([sep, node]) => node),
-        ];
-        const apply = (input, [first, ...rest]) => ({
-            [first]: rest.length
-                ? Array.isArray(input[first])
-                    ? input[first].map(v => apply(v, rest))
-                    : apply(input[first], rest)
-                : input[first]
-        });
-
-        $$ = { type: "FIELD_PATH", value, apply: (input) => apply(input, value) };
+        const { get } = yy.deps;
+        const value = [$1, ...$2.map(([sep, node]) => node)];
+        $$ = { type: "FIELD_PATH", value, apply: (input) => get(input, value) };
         }
     }
     | IDENTIFIER

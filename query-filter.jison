@@ -66,7 +66,7 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 %token GROUP_OPEN GROUP_CLOSE
 %left LAMBDA
 
-%parse-param ast
+%parse-param ast deps fns
 
 %ebnf
 

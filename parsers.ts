@@ -4,9 +4,10 @@ import _select from './query-select.generated';
 
 import deepmerge from 'deepmerge';
 
-import type { MergeSequenceFunction, JisonParser } from './jison-parser';
+import type { MergeSequenceFunction, FilterAst, OrderByAst, SelectAst } from './jison-parser';
 
-const mergeSequences: MergeSequenceFunction = (target, source, options) => {
+const mergeDeep = deepmerge;
+const mergeSequence: MergeSequenceFunction = (target, source, options) => {
   const destination = target.slice()
 
   source.forEach((item, index) => {
@@ -20,18 +21,54 @@ const mergeSequences: MergeSequenceFunction = (target, source, options) => {
   })
   return destination
 }
-
-function wrap<TAst>(parser: JisonParser<TAst>): Omit<JisonParser<TAst>, 'parse'> & { parse: (input: string) => TAst } {
-  return {
-    ...parser,
-    parse: (input: string) => {
-      const ast: TAst = {} as TAst;
-      parser.parse(input, ast, deepmerge, mergeSequences);
-      return ast;
-    }
+function compare<T>(left: T, right: T): -1 | 0 | 1 {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function get(input: any, [first, ...rest]: string[]): any {
+  if (first == null) {
+    throw new Error('Invalid operation. Second parameter requires at least one value.');
   }
+  return {
+    [first]: rest.length
+      ? Array.isArray(input[first])
+        ? input[first].map((v: any) => get(v, rest))
+        : get(input[first], rest)
+      : input[first]
+  };
 }
 
-export const filter = wrap(_filter);
-export const orderBy = wrap(_orderBy);
-export const select = wrap(_select);
+const dependencies = {
+  mergeDeep,
+  mergeSequence,
+  compare,
+  get
+};
+
+function fn_search_score(input: Record<string, unknown>) {
+  return input['@search.score'];
+}
+
+export const filter = {
+  ..._filter,
+  parse: (input: string) => {
+    const ast = {} as FilterAst;
+    _filter.parse(input, ast, dependencies, {});
+    return ast;
+  }
+};
+export const orderBy = {
+  ..._orderBy,
+  parse: (input: string) => {
+    const ast = {} as OrderByAst & { apply: <T>(left: T, right: T) => -1 | 0 | 1 };
+    _orderBy.parse(input, ast, dependencies, { fn_search_score });
+    return ast;
+  }
+};
+export const select = {
+  ..._select,
+  parse: (input: string) => {
+    const ast = {} as SelectAst & { apply: <T>(input: T) => Partial<T> };
+    _select.parse(input, ast, dependencies, {});
+    return ast;
+  }
+};

@@ -29,7 +29,7 @@
 %token GROUP_OPEN GROUP_CLOSE
 %token WILDCARD
 
-%parse-param ast
+%parse-param ast deps fns
 
 %ebnf
 
@@ -40,32 +40,81 @@
 /* Top-level rules */
 order_by_expression
     : order_by_clause (LIST_SEPARATOR order_by_clause)* EOF
-    { yy.ast.value = [$1, ...$2.map(([sep, clause]) => clause)] }
+    {
+        //
+        {
+        const { mergeDeep, mergeSequence } = yy.deps;
+        const keys = [$1, ...$2.map(([sep, clause]) => clause)];
+        const apply = (left, right) => {
+            for (const key of keys) {
+                const result = key.apply(left, right);
+                if (result !== 0) {
+                    return result;
+                }
+            }
+            return 0;
+        };
+        yy.ast.value = { type: "LIST", value: keys };
+        yy.ast.apply = apply;
+        }
+    }
     ;
 
 order_by_clause
     : variable (ORDER_ASCENDING | ORDER_DESCENDING)?
-    { $$ = { type: "ORDER", target: $1, direction: $2 || "asc" } }
+    {
+        //
+        {
+        const target = $1;
+        const direction = $2 || "asc";
+        const apply = (left, right) => direction === 'desc' ? target.apply(right, left) : target.apply(left, right);
+        $$ = { type: "ORDER", target, direction, apply };
+        }
+    }
     | sortable_function (ORDER_ASCENDING | ORDER_DESCENDING)?
-    { $$ = { type: "ORDER", target: $1, direction: $2 || "asc" } }
+    {
+        //
+        {
+        const target = $1;
+        const direction = $2 || "asc";
+        const apply = (left, right) => direction === 'desc' ? target.apply(right, left) : target.apply(left, right);
+        $$ = { type: "ORDER", target, direction, apply };
+        }
+    }
     ;
 sortable_function
 //     : geo_distance_call
-    : FN_SEARCH_SCORE GROUP_OPEN GROUP_CLOSE    { $$ = { type: "FN_SEARCH_SCORE" } }
+    : FN_SEARCH_SCORE GROUP_OPEN GROUP_CLOSE    {
+        //
+        {
+        const { compare } = yy.deps;
+        const fn_search_score = yy.fns.fn_search_score;
+        const apply = (left, right) => compare(fn_search_score(left), fn_search_score(right));
+        $$ = { type: "FN_SEARCH_SCORE", apply };
+        }
+    }
     ;
 
 /* Shared base rules */
 variable
     : IDENTIFIER (FP_SEPARATOR IDENTIFIER)+
     {
-        $$ = {
-            type: "FIELD_PATH",
-            value: [
-                $1,
-                ...$2.map(([sep, node]) => node),
-            ],
-        };
+        //
+        {
+        const { compare, get } = yy.deps;
+        const value = [$1, ...$2.map(([sep, node]) => node)];
+        const apply = (left, right) => compare(get(left, value), get(right, value));
+        $$ = { type: "FIELD_PATH", value, apply };
+        }
     }
     | IDENTIFIER
-    { $$ = { type: "IDENTIFIER", value: $1 } }
+    {
+        //
+        {
+        const { compare } = yy.deps;
+        const value = $1;
+        const apply = (left, right) => compare(left[value], right[value]);
+        $$ = { type: "IDENTIFIER", value, apply };
+        }
+    }
     ;

@@ -24,8 +24,12 @@ export type MergeDeepFunction = (target: Partial<unknown>, source: Partial<unkno
 export type ParseFunction<TAst> = (
   input: string,
   ast: TAst,
-  mergeDeep: MergeDeepFunction,
-  mergeSequence: MergeSequenceFunction
+  deps: {
+    mergeDeep: MergeDeepFunction,
+    mergeSequence: MergeSequenceFunction,
+    compare: <T>(left: T, right: T) => -1 | 0 | 1,
+  },
+  fns: Record<string, Function>
 ) => boolean;
 export type MergeSequenceFunction = (target: unknown[], source: unknown[], options: DeepMergeExtendedOptions) => unknown[];
 
