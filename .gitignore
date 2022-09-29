@@ -26,6 +26,3 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
-
-# Project specific
-*.generated.js

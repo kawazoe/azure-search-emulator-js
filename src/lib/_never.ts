@@ -3,6 +3,7 @@
  * @param dummy A dummy value used for strongly typed error validation, like the default of a switch.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
+// @ts-ignore
 export function _never(dummy: never): never {
   throw new Error('Unexpected logic case.');
 }

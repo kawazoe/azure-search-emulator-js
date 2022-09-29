@@ -1,20 +1,23 @@
 {
   "compilerOptions": {
-    "module": "esnext",
-    "target": "esnext",
-    "sourceMap": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
+    "target": "ESNext",
     "useDefineForClassFields": true,
-    "importHelpers": true,
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "lib": ["ESNext"],
+    "moduleResolution": "Node",
+    "strict": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "esModuleInterop": true,
-    "lib": [
-      "esnext"
-    ]
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "skipLibCheck": true,
   },
   "include": [
-    "**/*.ts"
+    "**/src"
   ],
   "exclude": [
     "node_modules",

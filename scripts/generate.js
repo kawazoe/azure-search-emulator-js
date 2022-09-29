@@ -8,6 +8,6 @@ function generate(source, destination) {
     fs.writeFileSync(destination, parser, { encoding: 'utf-8' });
 }
 
-generate('query-filter.jison', 'query-filter.generated.js');
-generate('query-orderby.jison', 'query-orderby.generated.js');
-generate('query-select.jison', 'query-select.generated.js');
+generate('src/query-filter.jison', 'src/generated/query-filter.js');
+generate('src/query-orderby.jison', 'src/generated/query-orderby.js');
+generate('src/query-select.jison', 'src/generated/query-select.js');

@@ -269,6 +269,7 @@ export class Index<T extends {}> {
 
   private constructor(
     public readonly name: string,
+    // @ts-ignore
     private readonly fields: FieldDefinition[],
     private readonly keyField: KeyFieldDefinition,
   ) {
@@ -339,6 +340,7 @@ export class Index<T extends {}> {
    * https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents
    * @param request
    */
+  // @ts-ignore
   public searchDocuments(request: SearchDocumentsRequest) {
     // TODO: Apply request
     return this.documents;
@@ -348,6 +350,7 @@ export class Index<T extends {}> {
    * https://learn.microsoft.com/en-us/rest/api/searchservice/suggestions
    * @param request
    */
+  // @ts-ignore
   public suggest(request: SuggestRequest) {
     // TODO: Apply request
     return this.documents;
@@ -357,6 +360,7 @@ export class Index<T extends {}> {
    * https://learn.microsoft.com/en-us/rest/api/searchservice/autocomplete
    * @param request
    */
+  // @ts-ignore
   public autoComplete(request: AutoCompleteRequest) {
     // TODO: Apply request
     return '';

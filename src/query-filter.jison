@@ -319,8 +319,8 @@ search_in_parameters
         {
         const { fn_search_in } = yy.fns;
         const variable = $1;
-        const valueList = $3.value;
-        $$ = { variable, valueList, apply: (input) => fn_search_in(input, variable, valueList) };
+        const valueList = $3;
+        $$ = { variable, valueList, apply: (input) => fn_search_in(input, variable, valueList.value) };
         }
     }
     | variable LIST_SEPARATOR string_literal LIST_SEPARATOR string_literal
@@ -329,9 +329,9 @@ search_in_parameters
         {
         const { fn_search_in } = yy.fns;
         const variable = $1;
-        const valueList = $3.value;
-        const delimiter = $5.value;
-        $$ = { variable, valueList, delimiter, apply: (input) => fn_search_in(input, variable, valueList, delimiter) };
+        const valueList = $3;
+        const delimiter = $5;
+        $$ = { variable, valueList, delimiter, apply: (input) => fn_search_in(input, variable, valueList.value, delimiter.value) };
         }
     }
     ;
@@ -362,28 +362,28 @@ search_is_match_parameters
     {
         //
         {
-        const search = $1.value;
-        $$ = { search, apply: (input, fn) => fn(input, search) };
+        const search = $1;
+        $$ = { search, apply: (input, fn) => fn(input, search.value) };
         }
     }
     | string_literal LIST_SEPARATOR string_literal
     {
         //
         {
-        const search = $1.value;
-        const searchFields = $3.value;
-        $$ = { search, searchFields, apply: (input, fn) => fn(input, search, searchFields) };
+        const search = $1;
+        const searchFields = $3;
+        $$ = { search, searchFields, apply: (input, fn) => fn(input, search.value, searchFields.value) };
         }
     }
     | string_literal LIST_SEPARATOR string_literal LIST_SEPARATOR QUERY_TYPE LIST_SEPARATOR SEARCH_MODE
     {
         //
         {
-        const search = $1.value;
-        const searchFields = $3.value;
+        const search = $1;
+        const searchFields = $3;
         const queryType = $5.slice(1, -1);
         const searchMode = $7.slice(1, -1);
-        $$ = { search, searchFields, queryType, searchMode, apply: (input, fn) => fn(input, search, searchFields, queryType, searchMode) };
+        $$ = { search, searchFields, queryType, searchMode, apply: (input, fn) => fn(input, search.value, searchFields.value, queryType, searchMode) };
         }
     }
     ;

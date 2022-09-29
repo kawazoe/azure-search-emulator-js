@@ -1,6 +1,6 @@
-import _filter from './query-filter.generated';
-import _orderBy from './query-orderby.generated';
-import _select from './query-select.generated';
+import _filter from './generated/query-filter';
+import _orderBy from './generated/query-orderby';
+import _select from './generated/query-select';
 
 import deepmerge from 'deepmerge';
 
