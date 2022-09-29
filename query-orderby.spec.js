@@ -7,7 +7,7 @@ let passed = 0;
 let failed = 0;
 function testApply(raw, source, target) {
   const pad = (str, c, max) => str + (c.repeat(max).substring(0, max - str.length));
-  const message = (kind, ...rest) => console[kind](pad(`It should convert "${raw}"`, ' ', 60), ...rest);
+  const message = (kind, ...rest) => console[kind](pad(`It should apply "${raw}"`, ' ', 60), ...rest);
 
   try {
     const ast = parser.parse(raw);

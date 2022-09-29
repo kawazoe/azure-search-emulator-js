@@ -37,11 +37,11 @@ const comparisonAst = (left, op, right) => ({ type: "COMPARISON", left, op, righ
     const datetimeOffsetAst = (value) => ({ type: "DATETIMEOFFSET", value });
     const integerAst = (value) => ({ type: "INTEGER", value });
     const floatAst = (value) => ({ type: "FLOAT", value });
-    const nanAst = () => ({ type: "NOT_A_NUMBER" });
-    const posInfAst = () => ({ type: "POSITIVE_INFINITY" });
-    const negInfAst = () => ({ type: "NEGATIVE_INFINITY" });
+    const nanAst = () => ({ type: "NOT_A_NUMBER", value: Number.NaN });
+    const posInfAst = () => ({ type: "POSITIVE_INFINITY", value: Number.POSITIVE_INFINITY });
+    const negInfAst = () => ({ type: "NEGATIVE_INFINITY", value: Number.NEGATIVE_INFINITY });
     const booleanAst = (value) => ({ type: "BOOLEAN", value });
-    const nullAst = () => ({ type: "NULL" });
+    const nullAst = () => ({ type: "NULL", value: null });
 const andExpressionAst = (left, right) => ({ type: "AND_EXPRESSION", left, right });
 const orExpressionAst = (left, right) => ({ type: "OR_EXPRESSION", left, right });
 const notExpressionAst = (value) => ({ type: "NOT_EXPRESSION", value });
@@ -49,7 +49,7 @@ const groupAst = (value) => ({ type: "GROUP_EXPRESSION", value });
 const lambdaAst = (params, expression) => ({ type: "LAMBDA", params, expression });
 const allFilterAst = (target, expression) => ({ type: "ALL_FILTER", target, expression });
 const anyFilterAst = (target, expression) => ({ type: "ANY_FILTER", target, expression });
-const searchInAst = (variable, valueList, delimiters) => ({ type: "FN_SEARCH_IN", variable, valueList, delimiters });
+const searchInAst = (variable, valueList, delimiter) => ({ type: "FN_SEARCH_IN", variable, valueList, delimiter });
 const searchIsMatchAst = (search, searchFields, queryType, searchMode) => ({ type: "FN_SEARCH_ISMATCH", search, searchFields, queryType, searchMode });
 const searchIsMatchScoringAst = (search, searchFields, queryType, searchMode) => ({ type: "FN_SEARCH_ISMATCHSCORING", search, searchFields, queryType, searchMode });
 
@@ -309,9 +309,5 @@ for (const [vStr, vAst] of functions) {
     test(vStr, vAst);
 }
 
-
 console.log('='.repeat(70));
 console.info('Passed:', passed, 'Failed:', failed);
-
-// console.log("parser productions:", parser.productions.filter(p => p.symbol.includes("field_path")));
-// console.log("lexer rules:", parser.lexer.rules);

@@ -101,9 +101,9 @@ variable
     {
         //
         {
-        const { compare, get } = yy.deps;
+        const { compare, getValue } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        const apply = (left, right) => compare(get(left, value), get(right, value));
+        const apply = (left, right) => compare(getValue(left, value), getValue(right, value));
         $$ = { type: "FIELD_PATH", value, apply };
         }
     }

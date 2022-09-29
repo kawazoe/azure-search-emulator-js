@@ -64,9 +64,9 @@ variable
     {
         //
         {
-        const { get } = yy.deps;
+        const { getStruct } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        $$ = { type: "FIELD_PATH", value, apply: (input) => get(input, value) };
+        $$ = { type: "FIELD_PATH", value, apply: (input) => getStruct(input, value) };
         }
     }
     | IDENTIFIER

@@ -77,7 +77,10 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 /* Top-level rules */
 filter_expression
     : boolean_expression EOF
-    { yy.ast.value = $1 }
+    {
+        yy.ast.value = $1;
+        yy.ast.apply = $1.apply;
+    }
     ;
 
 /* Shared base rules */
@@ -88,7 +91,9 @@ boolean_expression
     | boolean_literal
     | boolean_function_call
     | GROUP_OPEN boolean_expression GROUP_CLOSE
-    { $$ = { type: "GROUP_EXPRESSION", value: $2 } }
+    {
+        $$ = { type: "GROUP_EXPRESSION", value: $2, apply: $2.apply };
+    }
     | variable
     ;
 
@@ -96,73 +101,142 @@ boolean_expression
 variable
     : IDENTIFIER (FP_SEPARATOR IDENTIFIER)+
     {
-        $$ = {
-            type: "FIELD_PATH",
-            value: [
-                $1,
-                ...$2.map(([sep, node]) => node),
-            ],
-        };
+        //
+        {
+        const { getValue } = yy.deps;
+        const value = [$1, ...$2.map(([sep, node]) => node)];
+        $$ = { type: "FIELD_PATH", value, apply: (input) => getValue(input, value) };
+        }
     }
-    | IDENTIFIER        { $$ = { type: "IDENTIFIER", value: $1 } }
+    | IDENTIFIER
+    {
+        //
+        {
+        const value = $1;
+        $$ = { type: "IDENTIFIER", value, apply: (input) => input[value] };
+        }
+    }
     ;
 collection_filter_expression
     : variable FP_ALL GROUP_OPEN lambda_expression GROUP_CLOSE
-    { $$ = { type: "ALL_FILTER", target: $1, expression: $4 } }
+    {
+        //
+        {
+        const target = $1;
+        const expression = $4;
+        const apply = (input) => {
+            const collection = target.apply(input);
+            if (!Array.isArray(collection)) {
+                throw new Error(`Expected ${target.value} to be a collection but got ${collection} instead.`);
+            }
+            return collection.every(expression.apply)
+                ? collection.length
+                : 0;
+        };
+        $$ = { type: "ALL_FILTER", target, expression, apply };
+        }
+    }
     | variable FP_ANY GROUP_OPEN lambda_expression GROUP_CLOSE
-    { $$ = { type: "ANY_FILTER", target: $1, expression: $4 } }
+    {
+        //
+        {
+        const target = $1;
+        const expression = $4;
+        const apply = (input) => {
+            const collection = target.apply(input);
+            if (!Array.isArray(collection)) {
+                throw new Error(`Expected ${target.value} to be a collection but got ${collection} instead.`);
+            }
+            return collection.filter(expression.apply).length;
+        };
+        $$ = { type: "ANY_FILTER", target, expression, apply };
+        }
+    }
     | variable FP_ANY GROUP_OPEN GROUP_CLOSE
-    { $$ = { type: "ANY_FILTER", target: $1 } }
+    {
+        //
+        {
+        const apply = (input) => {
+            const collection = target.apply(input);
+            if (!Array.isArray(collection)) {
+                throw new Error(`Expected ${target.value} to be a collection but got ${collection} instead.`);
+            }
+            return collection.length;
+        };
+        $$ = { type: "ANY_FILTER", target: $1, apply };
+        }
+    }
     ;
 lambda_expression
-    : IDENTIFIER LAMBDA boolean_expression     { $$ = { type: "LAMBDA", params: [{ type: "IDENTIFIER", value: $1 }], expression: $3 } }
+    : IDENTIFIER LAMBDA boolean_expression
+    {
+        //
+        {
+        const value = $1;
+        const expression = $3;
+        $$ = { type: "LAMBDA", params: [{ type: "IDENTIFIER", value }], expression, apply: (input) => expression.apply({ [value]: input }) };
+        }
+    }
     ;
 logical_expression
     : boolean_expression AND boolean_expression
     {
-        $$ = {
-            type: "AND_EXPRESSION",
-            left: $1,
-            right: $3,
+        //
+        {
+        const left = $1;
+        const right = $3;
+        $$ = { type: "AND_EXPRESSION", left, right, apply: (input) => left.apply(input) * right.apply(input) };
         }
     }
     | boolean_expression OR boolean_expression
     {
-        $$ = {
-            type: "OR_EXPRESSION",
-            left: $1,
-            right: $3,
+        //
+        {
+        const left = $1;
+        const right = $3;
+        $$ = { type: "OR_EXPRESSION", left, right, apply: (input) => left.apply(input) + right.apply(input) };
         }
     }
-    | NOT boolean_expression    { $$ = { type: "NOT_EXPRESSION", value: $2 } }
+    | NOT boolean_expression
+    {
+        //
+        {
+        const value = $2;
+        $$ = { type: "NOT_EXPRESSION", value, apply: (input) => value.apply(input) + 1 };
+        }
+    }
     ;
 comparison_expression
     : variable_or_function comparison_operator constant
     {
-        $$ = {
-            type: "COMPARISON",
-            left: $1,
-            op: $2,
-            right: $3,
+        //
+        {
+        const left = $1;
+        const op = $2;
+        const right = $3;
+        const apply = (input) => op.apply(left.apply(input), right.value);
+        $$ = { type: "COMPARISON", left, op: op.kind, right, apply };
         }
     }
     | constant comparison_operator variable_or_function
     {
-        $$ = {
-            type: "COMPARISON",
-            left: $1,
-            op: $2,
-            right: $3,
+        //
+        {
+        const left = $1;
+        const op = $2;
+        const right = $3;
+        const apply = (input) => op.apply(left.value, right.apply(input));
+        $$ = { type: "COMPARISON", left, op: op.kind, right, apply };
         }
     }
     ;
 comparison_operator
-    : GREATER_THAN
-    | LOWER_THAN
-    | GREATER_OR_EQUAL
-    | LOWER_OR_EQUAL
-    | EQUAL
-    | NOT_EQUAL
+    : GREATER_THAN      { $$ = { kind: $1, apply: (l, r) => l > r ? 1 : 0 } }
+    | LOWER_THAN        { $$ = { kind: $1, apply: (l, r) => l < r ? 1 : 0 } }
+    | GREATER_OR_EQUAL  { $$ = { kind: $1, apply: (l, r) => l >= r ? 1 : 0 } }
+    | LOWER_OR_EQUAL    { $$ = { kind: $1, apply: (l, r) => l <= r ? 1 : 0 } }
+    | EQUAL             { $$ = { kind: $1, apply: (l, r) => l == r ? 1 : 0 } }
+    | NOT_EQUAL         { $$ = { kind: $1, apply: (l, r) => l != r ? 1 : 0 } }
     ;
 variable_or_function
     : variable          { $$ = $1 }
@@ -190,16 +264,16 @@ integer_literal
     ;
 float_literal
     : FLOAT_LITERAL                 { $$ = { type: "FLOAT", value: parseFloat($1) } }
-    | NOT_A_NUMBER_LITERAL          { $$ = { type: "NOT_A_NUMBER" } }
-    | NEGATIVE_INFINITY_LITERAL     { $$ = { type: "NEGATIVE_INFINITY" } }
-    | POSITIVE_INFINITY_LITERAL     { $$ = { type: "POSITIVE_INFINITY" } }
+    | NOT_A_NUMBER_LITERAL          { $$ = { type: "NOT_A_NUMBER", value: Number.NaN } }
+    | NEGATIVE_INFINITY_LITERAL     { $$ = { type: "NEGATIVE_INFINITY", value: Number.NEGATIVE_INFINITY } }
+    | POSITIVE_INFINITY_LITERAL     { $$ = { type: "POSITIVE_INFINITY", value: Number.POSITIVE_INFINITY } }
     ;
 boolean_literal
     : TRUE      { $$ = { type: "BOOLEAN", value: true } }
     | FALSE     { $$ = { type: "BOOLEAN", value: false } }
     ;
 null_literal
-    : NULL_LITERAL              { $$ = { type: "NULL" } }
+    : NULL_LITERAL              { $$ = { type: "NULL", value: null } }
     ;
 
 /* Rules for functions */
@@ -240,40 +314,76 @@ search_in_call
     ;
 search_in_parameters
     : variable LIST_SEPARATOR string_literal
-    { $$ = {
-        variable: $1,
-        valueList: $3,
-    } }
+    {
+        //
+        {
+        const { fn_search_in } = yy.fns;
+        const variable = $1;
+        const valueList = $3.value;
+        $$ = { variable, valueList, apply: (input) => fn_search_in(input, variable, valueList) };
+        }
+    }
     | variable LIST_SEPARATOR string_literal LIST_SEPARATOR string_literal
-    { $$ = {
-        variable: $1,
-        valueList: $3,
-        delimiters: $5,
-    } }
+    {
+        //
+        {
+        const { fn_search_in } = yy.fns;
+        const variable = $1;
+        const valueList = $3.value;
+        const delimiter = $5.value;
+        $$ = { variable, valueList, delimiter, apply: (input) => fn_search_in(input, variable, valueList, delimiter) };
+        }
+    }
     ;
 /* Note that it is illegal to call search.ismatch or search.ismatchscoring
 from inside a lambda expression. */
 search_is_match_call
     : FN_SEARCH_ISMATCH GROUP_OPEN search_is_match_parameters GROUP_CLOSE
-    { $$ = { type: "FN_SEARCH_ISMATCH", ...$3 } }
+    {
+        //
+        {
+        const { fn_search_ismatch } = yy.fns;
+        const parameters = $3;
+        $$ = { type: "FN_SEARCH_ISMATCH", ...parameters, apply: (input) => parameters.apply(input, fn_search_ismatch) };
+        }
+    }
     | FN_SEARCH_ISMATCHSCORING GROUP_OPEN search_is_match_parameters GROUP_CLOSE
-    { $$ = { type: "FN_SEARCH_ISMATCHSCORING", ...$3 } }
+    {
+        //
+        {
+        const { fn_search_ismatchscoring } = yy.fns;
+        const parameters = $3;
+        $$ = { type: "FN_SEARCH_ISMATCHSCORING", ...parameters, apply: (input) => parameters.apply(input, fn_search_ismatchscoring) };
+        }
+    }
     ;
 search_is_match_parameters
     : string_literal
-    { $$ = {
-        search: $1,
-    } }
+    {
+        //
+        {
+        const search = $1.value;
+        $$ = { search, apply: (input, fn) => fn(input, search) };
+        }
+    }
     | string_literal LIST_SEPARATOR string_literal
-    { $$ = {
-        search: $1,
-        searchFields: $3,
-    } }
+    {
+        //
+        {
+        const search = $1.value;
+        const searchFields = $3.value;
+        $$ = { search, searchFields, apply: (input, fn) => fn(input, search, searchFields) };
+        }
+    }
     | string_literal LIST_SEPARATOR string_literal LIST_SEPARATOR QUERY_TYPE LIST_SEPARATOR SEARCH_MODE
-    { $$ = {
-        search: $1,
-        searchFields: $3,
-        queryType: $5.slice(1, -1),
-        searchMode: $7.slice(1, -1),
-    } }
+    {
+        //
+        {
+        const search = $1.value;
+        const searchFields = $3.value;
+        const queryType = $5.slice(1, -1);
+        const searchMode = $7.slice(1, -1);
+        $$ = { search, searchFields, queryType, searchMode, apply: (input, fn) => fn(input, search, searchFields, queryType, searchMode) };
+        }
+    }
     ;
