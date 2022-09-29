@@ -247,14 +247,131 @@ export interface AutoCompleteRequest {
 const createHttpError = (code: number, message: string) => new Error(`[Azure Search Emulator] HTTP ${code} - ${message}`);
 const createHttp400 = () => createHttpError(400, 'Invalid Request');
 const createHttp404 = () => createHttpError(404, 'Not Found');
-const createHttp409 = () => createHttpError(409, 'Conflict');
+
+type GeoJSONPoint = { type: 'Point', coordinates: number[] };
+
+function buildAssertSchema<T>(fields: FieldDefinition[]): (document: Record<string, unknown>) => T {
+  const keyField = fields.find(isKeyFieldDefinition);
+  if (!keyField) {
+    throw new Error('Invalid schema. Missing KeyFieldDefinition.');
+  }
+
+  const isEdmString = (value: unknown) => typeof value === 'string';
+  const isKeyString = (value: unknown) => value != null && value != '' && isEdmString(value);
+  const isEdmInt32 = (value: unknown) => typeof value === 'number' && value < 2**31 && value > -(2**31) && value % 1 !== 0;
+  const isEdmInt64 = (value: unknown) => typeof value === 'number' && value % 1 !== 0;
+  const isEdmDouble = (value: unknown) => typeof value === 'number';
+  const isEdmBoolean = (value: unknown) => typeof value === 'boolean';
+  const isEdmDateTimeOffset = (value: unknown) =>
+    typeof value === 'string' && !Number.isNaN(Date.parse(value)) ||
+    value instanceof Date;
+  const isEdmGeographyPoint = (value: unknown) =>
+    typeof value === 'object' && isGeoJSONPoint(value as GeoJSONPoint) ||
+    typeof value === 'string' && isWKTPoint(value as string);
+  const isGeoJSONPoint = (value: GeoJSONPoint) => value.type === 'Point' && Array.isArray(value.coordinates) && typeof value.coordinates[0] === 'number' && typeof value.coordinates[1] === 'number'
+  const wktPointRegex = /^POINT ?\(\d+(\.\d+)? \d+(\.\d+)?\)$/;
+  const isWKTPoint = (value: string) => value.match(wktPointRegex)
+  const isEdmComplexType = (subTypes: FieldDefinition[], value: unknown) =>
+    typeof value === 'object' && validateComplexProp(subTypes, value as Record<string, unknown>);
+  const isEdmCollection = (subType: FieldDefinition, value: unknown) =>
+    Array.isArray(value) && validateCollectionProp(subType, value as unknown[]);
+
+  function validateSingleProp(field: FieldDefinition, value: unknown): ([] | [FieldDefinition[], string])[] {
+    const type = field.type;
+    switch (type) {
+      case 'Edm.String':
+        return isEdmString(value) ? []: [[[field], field.type]];
+      case 'Edm.Int32':
+        return isEdmInt32(value) ? []: [[[field], field.type]];
+      case 'Edm.Int64':
+        return isEdmInt64(value) ? []: [[[field], field.type]];
+      case 'Edm.Double':
+        return isEdmDouble(value) ? []: [[[field], field.type]];
+      case 'Edm.Boolean':
+        return isEdmBoolean(value) ? []: [[[field], field.type]];
+      case 'Edm.DateTimeOffset':
+        return isEdmDateTimeOffset(value) ? []: [[[field], field.type]];
+      case 'Edm.GeographyPoint':
+        return isEdmGeographyPoint(value) ? []: [[[field], field.type]];
+      case 'Edm.ComplexType': {
+        const result = isEdmComplexType(field.fields, value);
+
+        if (!Array.isArray(result)) {
+          return [[[field], field.type]];
+        }
+
+        const failures = result.filter(r => r.length) as [FieldDefinition[], string][];
+        return failures.map(([fs, m]) => [[field, ...fs], m]);
+      }
+      case 'Collection(Edm.String)':
+      case 'Collection(Edm.Int32)':
+      case 'Collection(Edm.Int64)':
+      case 'Collection(Edm.Double)':
+      case 'Collection(Edm.Boolean)':
+      case 'Collection(Edm.DateTimeOffset)':
+      case 'Collection(Edm.GeographyPoint)':
+      case 'Collection(Edm.ComplexType)': {
+        const subType = field.type.substring('Collection('.length, field.type.length - 1);
+        const result = isEdmCollection({ ...field, type: subType } as FieldDefinition, value);
+
+        if (!Array.isArray(result)) {
+          return [[[field], field.type]];
+        }
+
+        const failures = result.filter(r => r.length) as [FieldDefinition[], string][];
+        return failures.map(([fs, m]) => [[field, ...fs], m]);
+      }
+      default:
+        return _never(type);
+    }
+  }
+
+  function validateComplexProp(field: FieldDefinition[], value: Record<string, unknown>): ([] | [FieldDefinition[], string])[] {
+    return field.reduce(
+      (acc: ([] | [FieldDefinition[], string])[], cur: FieldDefinition) =>
+        [...acc, ...validateSingleProp(cur, value[cur.name])],
+      []
+    );
+  }
+
+  function validateCollectionProp(subType: FieldDefinition, value: unknown[]): ([] | [FieldDefinition[], string])[] {
+    return value.reduce(
+      (acc: ([] | [FieldDefinition[], string])[], cur: unknown) =>
+        [...acc, ...validateSingleProp(subType, cur)],
+      [],
+    );
+  }
+
+  return (document) => {
+    const key = document[keyField.name]
+    if (!isKeyString(key)) {
+      throw new Error('Schema assertion failed. Key not found in document.');
+    }
+
+    const props = fields
+      .filter(f => f.name in document);
+    const extraKeys = Object.keys(document)
+      .filter(k => !(props.find(f => f.name === k)));
+    if (extraKeys.length) {
+      throw new Error(`Schema assertion failed. Document ${key} has more properties than expected\n${JSON.stringify(extraKeys)}.`)
+    }
+
+    const invalidProps = validateComplexProp(props, document);
+
+    if (invalidProps.length) {
+      throw new Error(`Schema assertion failed. Document ${key} failed validation on props:\n${JSON.stringify(invalidProps, null, ' ')}`);
+    }
+
+    return document as T;
+  };
+}
 
 export class Index<T extends {}> {
   private documents: T[] = [];
 
   private keySelector = (doc: T) => (doc as Record<string, unknown>)[this.keyField.name] as string;
 
-  public static createIndex(
+  public static createIndex<T extends {}>(
     name: string,
     fields: FieldDefinition[]
   ) {
@@ -264,7 +381,7 @@ export class Index<T extends {}> {
       throw createHttp400();
     }
 
-    return new Index(name, fields, keyField as KeyFieldDefinition);
+    return new Index<T>(name, fields, keyField as KeyFieldDefinition, buildAssertSchema<T>(fields));
   }
 
   private constructor(
@@ -272,12 +389,8 @@ export class Index<T extends {}> {
     // @ts-ignore
     private readonly fields: FieldDefinition[],
     private readonly keyField: KeyFieldDefinition,
+    private readonly assertSchema: (document: Record<string, unknown>) => T,
   ) {
-  }
-
-  private assertOfIndexSchema(document: unknown): T {
-    // TODO: Validate that the document matches the field definitions
-    return document as T;
   }
 
   private matchExisting(document: T, match: (docs: T[], existing: T, index: number) => void, miss: (docs: T[]) => void) {
@@ -296,12 +409,12 @@ export class Index<T extends {}> {
   public postDocuments(documents: PostDocumentsRequest<T>) {
     const transforms = documents.value.map(v => {
       const { '@search.action': action, ...request } = v;
-      const document = this.assertOfIndexSchema(request);
+      const document = this.assertSchema(request);
 
       switch (action) {
         case 'upload':
         case undefined:
-          return this.matchExisting(document, () => _throw(createHttp409()), (docs) => { docs.push(document); });
+          return this.matchExisting(document, (docs, _, index) => { docs[index] = document }, (docs) => { docs.push(document); });
         case 'merge':
           return this.matchExisting(document, (_, existing) => { Object.assign(existing, document); }, () => _throw(createHttp404()));
         case 'mergerOrUpload':
