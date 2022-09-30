@@ -1,52 +1,41 @@
-import _filter from './generated/query-filter';
-import _orderBy from './generated/query-orderby';
-import _select from './generated/query-select';
+import _filter from './query-filter';
+import _orderBy from './query-orderby';
+import _select from './query-select';
 
 import deepmerge from 'deepmerge';
 
-import type { MergeSequenceFunction, FilterAst, OrderByAst, SelectAst } from './jison-parser';
+import { ODataSelect, ODataSelectResult } from '../lib/odata';
+import { getStruct, getValue } from '../lib/objects';
+import { MergeSequenceFunction } from './jison-parser';
+import type {
+  FilterAst,
+  OrderByAst,
+  SelectAst,
+  FacetAst,
+  FacetParamsAst,
+  FacetResults
+} from './asts';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
-  const destination = target.slice()
+  const destination = [...target];
 
-  source.forEach((item, index) => {
+  for (let index = 0; index < source.length; index++) {
+    const item = source[index];
+
     if (typeof destination[index] === 'undefined') {
-      destination[index] = options.cloneUnlessOtherwiseSpecified(item, options)
+      destination[index] = options.cloneUnlessOtherwiseSpecified(item, options);
     } else if (options.isMergeableObject(item)) {
-      destination[index] = deepmerge(target[index]!, item!, options)
+      destination[index] = deepmerge(target[index]!, item!, options);
     } else if (target.indexOf(item) === -1) {
-      destination.push(item)
+      destination.push(item);
     }
-  })
-  return destination
+  }
+
+  return destination;
 }
 function compare<T>(left: T, right: T): -1 | 0 | 1 {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-function getValue(input: any, [first, ...rest]: string[]): any {
-  if (first == null) {
-    throw new Error('Invalid operation. Second parameter requires at least one value.');
-  }
-
-  return rest.length
-    ? Array.isArray(input[first])
-      ? input[first].map((v: any) => getValue(v, rest))
-      : getValue(input[first], rest)
-    : input[first];
-}
-function getStruct(input: any, [first, ...rest]: string[]): any {
-  if (first == null) {
-    throw new Error('Invalid operation. Second parameter requires at least one value.');
-  }
-
-  return {
-    [first]: rest.length
-      ? Array.isArray(input[first])
-        ? input[first].map((v: any) => getStruct(v, rest))
-        : getStruct(input[first], rest)
-      : input[first]
-  };
 }
 
 const dependencies = {
@@ -140,8 +129,84 @@ export const orderBy = {
 export const select = {
   ..._select,
   parse: (input: string) => {
-    const ast = {} as SelectAst & { apply: <T>(input: T) => Partial<T> };
+    const ast = {} as SelectAst & { apply: <T extends object, Keys extends ODataSelect<T> = never>(input: T) => Keys extends never ? T : ODataSelectResult<T, Keys> };
     _select.parse(input, ast, dependencies, {});
     return ast;
   }
 };
+// TODO: highlight supports additional features like some/field/path-number to limit the highlight count
+export const highlight = select;
+
+export const facet = {
+  parse: (input: string): FacetAst => {
+    const [field, ...candidateParams] = input
+      .split(',')
+      .map(s => s.trim());
+
+    if (!field) {
+      throw new Error('Invalid facet. Missing field.');
+    }
+
+    const params = candidateParams
+      .map(p => {
+        const [name, value] = p
+          .split(':')
+          .map(s => s.trim());
+
+        if (!name || !value) {
+          throw new Error('Invalid facet. Param has missing name or value.');
+        }
+
+        return [name, value];
+      })
+      .reduce(
+        (acc, [name, value]) => {
+          switch (name) {
+            case 'count':
+              acc[name] = parseInt(value);
+              break;
+            case 'sort':
+              if (value.endsWith('value')) {
+                acc[name] = (l, r) => compare(l[0], r[0]);
+              }
+              if (value.endsWith('count')) {
+                acc[name] = (l, r) => compare(l[1], r[1]);
+              }
+
+              const comp = acc[name];
+              if (comp && value.startsWith('-')) {
+                acc[name] = (l, r) => comp(r, l);
+              }
+              break;
+            case 'values':
+            case 'interval':
+            case 'timeoffset':
+              acc[name] = value;
+              break;
+          }
+          return acc;
+        },
+        { count: 10 } as FacetParamsAst
+      );
+
+    const fieldPath = field.split('/');
+
+    const apply = <T>(accumulator: FacetResults, input: T) => {
+      if (!accumulator[field]) {
+        accumulator[field] = {
+          params,
+          results: {},
+        };
+      }
+      const acc = accumulator[field];
+      const value = `${getValue(input, fieldPath)}`;
+
+      const counter = acc.results[value];
+      acc.results[value] = counter ? counter + 1 : 1;
+
+      return accumulator;
+    }
+
+    return { field, params, apply };
+  }
+}
