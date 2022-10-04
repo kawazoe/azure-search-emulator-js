@@ -11,6 +11,9 @@ export type KeyFieldDefinition = {
   facetable?: boolean;
   retrievable?: true;
 };
+function createKeyField(definition: Omit<KeyFieldDefinition, 'type' | 'key'>): KeyFieldDefinition {
+  return { type: 'Edm.String', key: true, ...definition };
+}
 export type StringFieldDefinition = {
   name: string;
   type: 'Edm.String';
@@ -21,6 +24,9 @@ export type StringFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createStringField(definition: Omit<StringFieldDefinition, 'type'>): StringFieldDefinition {
+  return { type: 'Edm.String', ...definition };
+}
 export type Int32FieldDefinition = {
   name: string;
   type: 'Edm.Int32';
@@ -31,6 +37,9 @@ export type Int32FieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createInt64Field(definition: Omit<Int64FieldDefinition, 'type'>): Int64FieldDefinition {
+  return { type: 'Edm.Int64', ...definition };
+}
 export type Int64FieldDefinition = {
   name: string;
   type: 'Edm.Int64';
@@ -41,6 +50,9 @@ export type Int64FieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createInt32Field(definition: Omit<Int32FieldDefinition, 'type'>): Int32FieldDefinition {
+  return { type: 'Edm.Int32', ...definition };
+}
 export type DoubleFieldDefinition = {
   name: string;
   type: 'Edm.Double';
@@ -51,6 +63,9 @@ export type DoubleFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createDoubleField(definition: Omit<DoubleFieldDefinition, 'type'>): DoubleFieldDefinition {
+  return { type: 'Edm.Double', ...definition };
+}
 export type BooleanFieldDefinition = {
   name: string;
   type: 'Edm.Boolean';
@@ -61,6 +76,9 @@ export type BooleanFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createBooleanField(definition: Omit<BooleanFieldDefinition, 'type'>): BooleanFieldDefinition {
+  return { type: 'Edm.Boolean', ...definition };
+}
 export type DateTimeOffsetFieldDefinition = {
   name: string;
   type: 'Edm.DateTimeOffset';
@@ -71,6 +89,9 @@ export type DateTimeOffsetFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createDateTimeOffsetField(definition: Omit<DateTimeOffsetFieldDefinition, 'type'>): DateTimeOffsetFieldDefinition {
+  return { type: 'Edm.DateTimeOffset', ...definition };
+}
 export type GeographyPointFieldDefinition = {
   name: string;
   type: 'Edm.GeographyPoint';
@@ -81,11 +102,17 @@ export type GeographyPointFieldDefinition = {
   facetable?: false;
   retrievable?: boolean;
 };
+function createGeographyPointField(definition: Omit<GeographyPointFieldDefinition, 'type'>): GeographyPointFieldDefinition {
+  return { type: 'Edm.GeographyPoint', ...definition };
+}
 export type ComplexTypeFieldDefinition = {
   name: string;
   type:  'Edm.ComplexType';
   fields: BasicFieldDefinition[];
 };
+function createComplexTypeField(definition: Omit<ComplexTypeFieldDefinition, 'type'>): ComplexTypeFieldDefinition {
+  return { type: 'Edm.ComplexType', ...definition };
+}
 
 export type StringCollectionFieldDefinition = {
   name: string;
@@ -97,6 +124,9 @@ export type StringCollectionFieldDefinition = {
   facetable?: false;
   retrievable?: boolean;
 };
+function createStringCollectionField(definition: Omit<StringCollectionFieldDefinition, 'type'>): StringCollectionFieldDefinition {
+  return { type: 'Collection(Edm.String)', ...definition };
+}
 export type Int32CollectionFieldDefinition = {
   name: string;
   type: 'Collection(Edm.Int32)';
@@ -107,6 +137,9 @@ export type Int32CollectionFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createInt32CollectionField(definition: Omit<Int32CollectionFieldDefinition, 'type'>): Int32CollectionFieldDefinition {
+  return { type: 'Collection(Edm.Int32)', ...definition };
+}
 export type Int64CollectionFieldDefinition = {
   name: string;
   type: 'Collection(Edm.Int64)';
@@ -117,6 +150,9 @@ export type Int64CollectionFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createInt64CollectionField(definition: Omit<Int64CollectionFieldDefinition, 'type'>): Int64CollectionFieldDefinition {
+  return { type: 'Collection(Edm.Int64)', ...definition };
+}
 export type DoubleCollectionFieldDefinition = {
   name: string;
   type: 'Collection(Edm.Double)';
@@ -127,6 +163,9 @@ export type DoubleCollectionFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createDoubleCollectionField(definition: Omit<DoubleCollectionFieldDefinition, 'type'>): DoubleCollectionFieldDefinition {
+  return { type: 'Collection(Edm.Double)', ...definition };
+}
 export type BooleanCollectionFieldDefinition = {
   name: string;
   type: 'Collection(Edm.Boolean)';
@@ -137,6 +176,9 @@ export type BooleanCollectionFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createBooleanCollectionField(definition: Omit<BooleanCollectionFieldDefinition, 'type'>): BooleanCollectionFieldDefinition {
+  return { type: 'Collection(Edm.Boolean)', ...definition };
+}
 export type DateTimeOffsetCollectionFieldDefinition = {
   name: string;
   type: 'Collection(Edm.DateTimeOffset)';
@@ -147,6 +189,9 @@ export type DateTimeOffsetCollectionFieldDefinition = {
   facetable?: boolean;
   retrievable?: boolean;
 };
+function createDateTimeOffsetCollectionField(definition: Omit<DateTimeOffsetCollectionFieldDefinition, 'type'>): DateTimeOffsetCollectionFieldDefinition {
+  return { type: 'Collection(Edm.DateTimeOffset)', ...definition };
+}
 export type GeographyPointCollectionFieldDefinition = {
   name: string;
   type: 'Collection(Edm.GeographyPoint)';
@@ -157,6 +202,9 @@ export type GeographyPointCollectionFieldDefinition = {
   facetable?: false;
   retrievable?: boolean;
 };
+function createGeographyPointCollectionField(definition: Omit<GeographyPointCollectionFieldDefinition, 'type'>): GeographyPointCollectionFieldDefinition {
+  return { type: 'Collection(Edm.GeographyPoint)', ...definition };
+}
 export type ComplexTypeCollectionFieldDefinition = {
   name: string;
   type:  'Collection(Edm.ComplexType)';
@@ -167,9 +215,11 @@ export type ComplexTypeCollectionFieldDefinition = {
   retrievable?: boolean;
   fields: BasicFieldDefinition[];
 };
+function createComplexTypeCollectionField(definition: Omit<ComplexTypeCollectionFieldDefinition, 'type'>): ComplexTypeCollectionFieldDefinition {
+  return { type: 'Collection(Edm.ComplexType)', ...definition };
+}
 
 export type BasicFieldDefinition =
-  KeyFieldDefinition |
   StringFieldDefinition |
   Int32FieldDefinition |
   Int64FieldDefinition |
@@ -188,6 +238,29 @@ export type BasicFieldDefinition =
   ComplexTypeCollectionFieldDefinition;
 
 export type FieldDefinition = KeyFieldDefinition | BasicFieldDefinition;
+
+export const fields = {
+  key: createKeyField,
+  string: createStringField,
+  int64: createInt64Field,
+  int32: createInt32Field,
+  double: createDoubleField,
+  boolean: createBooleanField,
+  dateTimeOffset: createDateTimeOffsetField,
+  geographyPoint: createGeographyPointField,
+  complexType: createComplexTypeField,
+
+  collections: {
+    string: createStringCollectionField,
+    int64: createInt64CollectionField,
+    int32: createInt32CollectionField,
+    double: createDoubleCollectionField,
+    boolean: createBooleanCollectionField,
+    dateTimeOffset: createDateTimeOffsetCollectionField,
+    geographyPoint: createGeographyPointCollectionField,
+    complexType: createComplexTypeCollectionField,
+  }
+};
 
 export function isKeyFieldDefinition(field: FieldDefinition) {
   return field.type === 'Edm.String' && field.key === true;

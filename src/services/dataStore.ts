@@ -47,7 +47,7 @@ export class DataStore<T extends object> {
       schema,
       toArray(flattenSchema(schema)),
       keyField as KeyFieldDefinition,
-      createAssertSchema<T>(schema)
+      createAssertSchema<T>(schema),
     );
   }
 
