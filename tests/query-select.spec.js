@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { select as parser } from '../dist/azure-search-emulator.es.js';
+import { select as parser } from '../src/parsers';
 
 describe('query-select', () => {
   describe('apply', () => {

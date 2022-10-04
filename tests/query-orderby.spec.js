@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { orderBy as parser } from '../dist/azure-search-emulator.es.js';
+import { orderBy as parser } from '../src/parsers';
 
 describe('query-select', () => {
   describe('apply', () => {
