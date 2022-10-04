@@ -86,7 +86,7 @@ function createSearchScoreMapper(
   highlights: Parsers.SelectAst,
   highlightPostTag: string,
   highlightPreTag: string,
-  searchText: string
+  searchText: string,
 ) {
   const highlightsPaths = toPaths(highlights);
 
@@ -137,7 +137,7 @@ function createSearchScoreMapper(
           acc.features[last.name] = {
             uniqueTokenMatches: uniqueTokens.length,
             similarityScore: matchedLength / valueLength,
-            termFrequency: tokens.length
+            termFrequency: tokens.length,
           }
         }
 
@@ -172,7 +172,7 @@ export class SearchEngine<T extends object> {
         highlightAst ?? [],
         request.highlightPostTag ?? '',
         request.highlightPreTag ?? '',
-        request.search
+        request.search,
       )
       : defaultSearchScoreMapper;
 
@@ -235,7 +235,7 @@ export class SearchEngine<T extends object> {
       : searchResults.results.map(([r, meta]) => ({
         ...r,
         ...meta,
-      } as SearchResult<ODataSelectResult<T, Keys>>));
+      } as unknown as SearchResult<ODataSelectResult<T, Keys>>));
     const skip = request.skip ?? 0;
     const top = Math.min(request.top ?? maxPageSize, maxPageSize);
     const limited = selected.slice(skip, skip + top);
@@ -245,7 +245,7 @@ export class SearchEngine<T extends object> {
       ? {
         ...request,
         ...(request.skip ? { skip: request.skip + limited.length } : {}),
-        ...(request.top ? { top: request.top - limited.length } : {})
+        ...(request.top ? { top: request.top - limited.length } : {}),
       }
       : undefined;
 
