@@ -1,11 +1,25 @@
-import { flatten, sum } from '../lib/arrays';
-import * as Parsers from '../parsers';
-import { FieldDefinition } from './schema';
-import { DataStore } from './dataStore';
-import { ODataSelect, ODataSelectResult, toODataQuery } from '../lib/odata';
 import { pipe } from '../lib/functions';
-import { filter, identity, map, reduce, sort, take, toArray, toIterator, toRecord } from '../lib/generators';
+import {
+  asIterable,
+  filter,
+  flatten,
+  identity,
+  map,
+  reduce,
+  sort,
+  sum,
+  take,
+  toArray,
+  toIterable,
+  toRecord
+} from '../lib/iterables';
 import { getValue } from '../lib/objects';
+import type { ODataSelect, ODataSelectResult } from '../lib/odata';
+import { toODataQuery } from '../lib/odata';
+
+import * as Parsers from '../parsers';
+import type { FieldDefinition, FlatSchema } from './schema';
+import { SchemaError } from './schema';
 
 export interface SearchDocumentsRequest<T extends object, Keys extends ODataSelect<T> | string> {
   count?: boolean;
@@ -68,9 +82,8 @@ function isFieldSearchable(searchFields: Parsers.SelectAst): (field: [string, Fi
 
   const searchableTypes = ['Edm.String', 'Collection(Edm.String)'];
   return ([path, last]) => {
-    const searchable = searchableTypes.includes(last.type)
-      && (last as { searchable?: boolean }).searchable
-      || false;
+    const isFieldSearchable = (last as { searchable?: boolean }).searchable ?? true;
+    const searchable = isFieldSearchable && searchableTypes.includes(last.type);
 
     if (searchable && searchFieldPaths.length) {
       return searchFieldPaths.includes(path);
@@ -82,7 +95,7 @@ function isFieldSearchable(searchFields: Parsers.SelectAst): (field: [string, Fi
 
 const defaultSearchScoreMapper = () => ({ match: true, score: 0, highlights: {}, features: {}});
 function createSearchScoreMapper(
-  searchables: [string, FieldDefinition][],
+  searchables: FlatSchema,
   highlights: Parsers.SelectAst,
   highlightPostTag: string,
   highlightPreTag: string,
@@ -117,8 +130,17 @@ function createSearchScoreMapper(
     const { score, highlights, features } = searchables.reduce(
       (acc, [path, last]) => {
         const value = getValue(document, path.split('/'));
+
+        if (value == null) {
+          return acc;
+        }
+
         const matches = matchAllByField(last, value);
-        const tokens = flatten(matches);
+        const tokens  = pipe(
+          matches,
+          flatten,
+          toArray,
+        ) as string[];
 
         if (tokens.length) {
           acc.score += sum(tokens.map(t => t.length));
@@ -150,11 +172,13 @@ function createSearchScoreMapper(
   }
 }
 
-const maxPageSize = 50;
+const defaultPageSize = 50;
+const maxPageSize = 1000;
 
 export class SearchEngine<T extends object> {
   constructor(
-    private readonly dataStore: DataStore<T>,
+    private readonly flatSchemaProvider: () => FlatSchema,
+    private readonly documentsProvider: () => T[],
   ) {
   }
 
@@ -162,13 +186,27 @@ export class SearchEngine<T extends object> {
     const filterAst = request.filter && Parsers.filter.parse(request.filter) || undefined;
     const orderByAst = request.orderBy && Parsers.orderBy.parse(request.orderBy.join(', ')) || undefined;
     const selectAst = request.select && Parsers.select.parse(request.select.join(', ')) || undefined;
-    const searchFieldsAst = request.searchFields && Parsers.select.parse(request.searchFields) || undefined;
+    const searchFieldsAst = request.searchFields && Parsers.search.parse(request.searchFields) || undefined;
     const highlightAst = request.highlight && Parsers.highlight.parse(request.highlight) || undefined;
     const facetAst = request.facets && request.facets.map(f => Parsers.facet.parse(f)) || undefined;
 
+    const requirementFailures: string[] = [
+      ...(filterAst?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(orderByAst?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(selectAst?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(searchFieldsAst?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(highlightAst?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(pipe(facetAst ?? [], map(f => f.canApply(this.flatSchemaProvider())), flatten)),
+    ];
+
+    if (requirementFailures.length) {
+      throw new SchemaError('Part of the request is not compatible with the current schema', requirementFailures);
+    }
+
     const searchScoreMapper = request.search
       ? createSearchScoreMapper(
-        this.dataStore.flatSchema.filter(isFieldSearchable(searchFieldsAst ?? [])),
+        // TODO: Reverse the algorithm to scan pre-applied documents instead of the schema
+        this.flatSchemaProvider().filter(isFieldSearchable(searchFieldsAst ?? [])),
         highlightAst ?? [],
         request.highlightPostTag ?? '',
         request.highlightPreTag ?? '',
@@ -177,7 +215,7 @@ export class SearchEngine<T extends object> {
       : defaultSearchScoreMapper;
 
     const searchResults = pipe(
-      toIterator(this.dataStore.documents),
+      asIterable(this.documentsProvider()),
       map(document => ({ document, filterScore: filterAst?.apply(document) ?? 1 })),
       filter(({filterScore}) => filterScore >= 0),
       map(({document, filterScore}) => ({ document, filterScore, ...searchScoreMapper(document as Record<string, unknown>) })),
@@ -211,12 +249,12 @@ export class SearchEngine<T extends object> {
       ),
     );
 
-    const facets = pipe(
-      toIterator(searchResults.facets),
+    const facets = request.facets ? pipe(
+      toIterable(searchResults.facets),
       map(([key, facet]): [string, SearchFacetBase[]] => [
         key,
         pipe(
-          toIterator(facet.results),
+          toIterable(facet.results),
           facet.params.sort ? sort(facet.params.sort) : identity,
           take(facet.params.count),
           // TODO: Add support for ranged facets
@@ -225,37 +263,40 @@ export class SearchEngine<T extends object> {
         ),
       ]),
       toRecord,
-    )
+    ) : undefined;
 
     const selected: SearchResult<ODataSelectResult<T, Keys>>[] = selectAst
       ? searchResults.results.map(([r, meta]) => ({
-        ...selectAst.apply<T, Keys>(r),
+        ...selectAst.apply(r) as ODataSelectResult<T, Keys>,
         ...meta,
       } as SearchResult<ODataSelectResult<T, Keys>>))
       : searchResults.results.map(([r, meta]) => ({
-        ...r,
+        ...r as unknown as ODataSelectResult<T, Keys>,
         ...meta,
-      } as unknown as SearchResult<ODataSelectResult<T, Keys>>));
+      }));
     const skip = request.skip ?? 0;
-    const top = Math.min(request.top ?? maxPageSize, maxPageSize);
-    const limited = selected.slice(skip, skip + top);
-    const hasMore = top > limited.length;
+    const top = request.top ?? defaultPageSize;
+    const pageSize = Math.min(top, maxPageSize);
+    const limited = selected.slice(skip, skip + pageSize);
 
-    const nextPageRequest = hasMore
+    const nextPageRequest = top > maxPageSize && selected.length > skip + pageSize
       ? {
         ...request,
-        ...(request.skip ? { skip: request.skip + limited.length } : {}),
-        ...(request.top ? { top: request.top - limited.length } : {}),
+        skip: skip + pageSize,
+        top: top - pageSize,
       }
       : undefined;
 
+    const count = request.count ? searchResults.results.length : undefined;
+    const coverage = request.minimumCoverage ? 100 : undefined;
+
     return {
-      '@odata.count': request.count ? searchResults.results.length : undefined,
-      '@search.coverage': request.minimumCoverage ? 100 : undefined,
-      '@search.facets': request.facets ? facets : undefined,
-      '@search.nextPageParameters': nextPageRequest,
+      ...(count == null ? {} : { '@odata.count': count }),
+      ...(coverage == null ? {} : { '@search.coverage': coverage}),
+      ...(facets == null ? {} : { '@search.facets': facets }),
+      ...(nextPageRequest == null ? {} : { '@search.nextPageParameters': nextPageRequest }),
       value: limited,
-      '@odata.nextLink': nextPageRequest ? toODataQuery(nextPageRequest) : undefined,
+      ...(nextPageRequest == null ? {} : { '@odata.nextLink': toODataQuery(nextPageRequest) }),
     }
   }
 }

@@ -1,13 +1,15 @@
 import { _throw } from '../lib/_throw';
 import { _never } from '../lib/_never';
-import { select } from '../parsers';
-import { createAssertSchema, FieldDefinition, isKeyFieldDefinition, KeyFieldDefinition } from './schema';
-import { createHttp400, createHttp404 } from '../lib/http';
-import { toArray } from '../lib/generators';
+import { createHttp404 } from '../lib/http';
+import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
-export interface FindDocumentRequest {
+import { select } from '../parsers';
+import type { FlatSchema, KeyFieldDefinition, Schema } from './schema';
+import {  validateSchema } from './schema';
+
+export interface FindDocumentRequest<T extends object, Keys extends ODataSelect<T>> {
   key: string;
-  select?: string;          //< fields as csv
+  select?: Keys[];          //< fields as csv
 }
 
 export interface PostDocumentsRequest<TDoc> {
@@ -16,44 +18,26 @@ export interface PostDocumentsRequest<TDoc> {
   } & TDoc)[];
 }
 
-function *flattenSchema(schema: FieldDefinition[]): IterableIterator<[string, FieldDefinition]> {
-  for (const field of schema) {
-    yield [field.name, field];
-
-    if (field.type === 'Edm.ComplexType' || field.type === 'Collection(Edm.ComplexType)') {
-      const subFields = flattenSchema(field.fields);
-
-      for (const [subName, subField] of subFields) {
-        yield [`${field.name}/${subName}`, subField];
-      }
-    }
-  }
-}
-
 export class DataStore<T extends object> {
   public readonly documents: T[] = [];
   public readonly keySelector = (doc: T) => (doc as Record<string, unknown>)[this.keyField.name] as string;
 
   public static createDataStore<T extends object>(
-    schema: FieldDefinition[],
+    schema: Schema,
   ) {
-    const keyField = schema.find(isKeyFieldDefinition);
-
-    if (!keyField) {
-      throw createHttp400();
-    }
+    const { keyField, flatSchema, assertSchema } = validateSchema<T>(schema);
 
     return new DataStore<T>(
       schema,
-      toArray(flattenSchema(schema)),
-      keyField as KeyFieldDefinition,
-      createAssertSchema<T>(schema),
+      flatSchema,
+      keyField,
+      assertSchema,
     );
   }
 
   constructor(
-    public readonly schema: FieldDefinition[],
-    public readonly flatSchema: [string, FieldDefinition][],
+    public readonly schema: Schema,
+    public readonly flatSchema: FlatSchema,
     public readonly keyField: KeyFieldDefinition,
     private readonly assertSchema: (document: Record<string, unknown>) => T,
   ) {
@@ -61,15 +45,16 @@ export class DataStore<T extends object> {
 
   private matchExisting(document: T, match: (docs: T[], existing: T, index: number) => void, miss: (docs: T[]) => void) {
     const index = this.documents.findIndex(d => this.keySelector(d) === this.keySelector(document));
-    return index
+    return index >= 0
       ? match(this.documents, this.documents[index]!, index)
       : miss(this.documents);
   }
 
-  public findDocument(request: FindDocumentRequest): Partial<T> {
+  public findDocument<Keys extends ODataSelect<T>>(request: FindDocumentRequest<T, Keys>): ODataSelectResult<T, Keys> {
     const document = this.documents.find(d => this.keySelector(d) === request.key) ?? _throw(createHttp404());
-    const selectAst = request.select && select.parse(request.select) || undefined;
-    return selectAst ? selectAst.apply(document) : document;
+    const selectAst = request.select && select.parse(request.select.join(', ')) || undefined;
+    const result = selectAst ? selectAst.apply(document) : document;
+    return result as ODataSelectResult<T, Keys>;
   }
 
   public postDocuments(documents: PostDocumentsRequest<T>) {

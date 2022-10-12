@@ -6,5 +6,9 @@ export class HttpError extends CustomError {
   }
 }
 
-export const createHttp400 = () => new HttpError(400, 'Invalid Request');
-export const createHttp404 = () => new HttpError(404, 'Not Found');
+export function createHttp400() {
+  return new HttpError(400, 'Invalid Request');
+}
+export function createHttp404() {
+  return new HttpError(404, 'Not Found');
+}

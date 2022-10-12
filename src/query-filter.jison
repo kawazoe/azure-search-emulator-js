@@ -79,6 +79,7 @@ filter_expression
     : boolean_expression EOF
     {
         yy.ast.value = $1;
+        yy.ast.canApply = $1.canApply;
         yy.ast.apply = $1.apply;
     }
     ;
@@ -89,10 +90,14 @@ boolean_expression
     | logical_expression
     | comparison_expression
     | boolean_literal
+    {
+        const literal = $1;
+        $$ = { ...literal, canApply: () => [], apply: () => literal.value };
+    }
     | boolean_function_call
     | GROUP_OPEN boolean_expression GROUP_CLOSE
     {
-        $$ = { type: "GROUP_EXPRESSION", value: $2, apply: $2.apply };
+        $$ = { type: "GROUP_EXPRESSION", value: $2, canApply: $2.canApply, apply: $2.apply };
     }
     | variable
     ;
@@ -103,17 +108,22 @@ variable
     {
         //
         {
-        const { getValue } = yy.deps;
+        const { getValue, matchSchema } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        $$ = { type: "FIELD_PATH", value, apply: (input) => getValue(input, value) };
+        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const apply = (input) => getValue(input, value);
+        $$ = { type: "FIELD_PATH", value, canApply, apply };
         }
     }
     | IDENTIFIER
     {
         //
         {
+        const { getValue, matchSchema } = yy.deps;
         const value = $1;
-        $$ = { type: "IDENTIFIER", value, apply: (input) => input[value] };
+        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const apply = (input) => input[value];
+        $$ = { type: "IDENTIFIER", value, canApply, apply };
         }
     }
     ;
@@ -124,6 +134,7 @@ collection_filter_expression
         {
         const target = $1;
         const expression = $4;
+        const canApply = target.canApply;
         const apply = (input) => {
             const collection = target.apply(input);
             if (!Array.isArray(collection)) {
@@ -133,7 +144,7 @@ collection_filter_expression
                 ? collection.length
                 : 0;
         };
-        $$ = { type: "ALL_FILTER", target, expression, apply };
+        $$ = { type: "ALL_FILTER", target, expression, canApply, apply };
         }
     }
     | variable FP_ANY GROUP_OPEN lambda_expression GROUP_CLOSE
@@ -142,6 +153,7 @@ collection_filter_expression
         {
         const target = $1;
         const expression = $4;
+        const canApply = target.canApply;
         const apply = (input) => {
             const collection = target.apply(input);
             if (!Array.isArray(collection)) {
@@ -149,13 +161,15 @@ collection_filter_expression
             }
             return collection.filter(expression.apply).length;
         };
-        $$ = { type: "ANY_FILTER", target, expression, apply };
+        $$ = { type: "ANY_FILTER", target, expression, canApply, apply };
         }
     }
     | variable FP_ANY GROUP_OPEN GROUP_CLOSE
     {
         //
         {
+        const target = $1;
+        const canApply = target.canApply;
         const apply = (input) => {
             const collection = target.apply(input);
             if (!Array.isArray(collection)) {
@@ -163,7 +177,7 @@ collection_filter_expression
             }
             return collection.length;
         };
-        $$ = { type: "ANY_FILTER", target: $1, apply };
+        $$ = { type: "ANY_FILTER", target, canApply, apply };
         }
     }
     ;
@@ -174,7 +188,9 @@ lambda_expression
         {
         const value = $1;
         const expression = $3;
-        $$ = { type: "LAMBDA", params: [{ type: "IDENTIFIER", value }], expression, apply: (input) => expression.apply({ [value]: input }) };
+        const canApply = (schema, require) => [...value.canApply(schema, require), ...expression.canApply(schema, require)];
+        const apply = (input) => expression.apply({ [value]: input });
+        $$ = { type: "LAMBDA", params: [{ type: "IDENTIFIER", value }], expression, canApply, apply };
         }
     }
     ;
@@ -185,7 +201,9 @@ logical_expression
         {
         const left = $1;
         const right = $3;
-        $$ = { type: "AND_EXPRESSION", left, right, apply: (input) => left.apply(input) * right.apply(input) };
+        const canApply = (schema, require) => [...left.canApply(schema, require), ...right.canApply(schema, require)];
+        const apply = (input) => left.apply(input) * right.apply(input);
+        $$ = { type: "AND_EXPRESSION", left, right, canApply, apply };
         }
     }
     | boolean_expression OR boolean_expression
@@ -194,7 +212,9 @@ logical_expression
         {
         const left = $1;
         const right = $3;
-        $$ = { type: "OR_EXPRESSION", left, right, apply: (input) => left.apply(input) + right.apply(input) };
+        const canApply = (schema, require) => [...left.canApply(schema, require), ...right.canApply(schema, require)];
+        const apply = (input) => left.apply(input) + right.apply(input);
+        $$ = { type: "OR_EXPRESSION", left, right, canApply, apply };
         }
     }
     | NOT boolean_expression
@@ -202,7 +222,9 @@ logical_expression
         //
         {
         const value = $2;
-        $$ = { type: "NOT_EXPRESSION", value, apply: (input) => value.apply(input) + 1 };
+        const canApply = value.canApply;
+        const apply = (input) => value.apply(input) + 1;
+        $$ = { type: "NOT_EXPRESSION", value, canApply, apply };
         }
     }
     ;
@@ -214,8 +236,9 @@ comparison_expression
         const left = $1;
         const op = $2;
         const right = $3;
+        const canApply = left.canApply;
         const apply = (input) => op.apply(left.apply(input), right.value);
-        $$ = { type: "COMPARISON", left, op: op.kind, right, apply };
+        $$ = { type: "COMPARISON", left, op: op.kind, right, canApply, apply };
         }
     }
     | constant comparison_operator variable_or_function
@@ -225,8 +248,9 @@ comparison_expression
         const left = $1;
         const op = $2;
         const right = $3;
+        const canApply = right.canApply;
         const apply = (input) => op.apply(left.value, right.apply(input));
-        $$ = { type: "COMPARISON", left, op: op.kind, right, apply };
+        $$ = { type: "COMPARISON", left, op: op.kind, right, canApply, apply };
         }
     }
     ;
@@ -320,7 +344,9 @@ search_in_parameters
         const { fn_search_in } = yy.fns;
         const variable = $1;
         const valueList = $3;
-        $$ = { variable, valueList, apply: (input) => fn_search_in(input, variable, valueList.value) };
+        const canApply = variable.canApply;
+        const apply = (input) => fn_search_in(input, variable, valueList.value);
+        $$ = { variable, valueList, canApply, apply };
         }
     }
     | variable LIST_SEPARATOR string_literal LIST_SEPARATOR string_literal
@@ -331,7 +357,9 @@ search_in_parameters
         const variable = $1;
         const valueList = $3;
         const delimiter = $5;
-        $$ = { variable, valueList, delimiter, apply: (input) => fn_search_in(input, variable, valueList.value, delimiter.value) };
+        const canApply = variable.canApply;
+        const apply = (input) => fn_search_in(input, variable, valueList.value, delimiter.value);
+        $$ = { variable, valueList, delimiter, canApply, apply };
         }
     }
     ;
@@ -344,7 +372,9 @@ search_is_match_call
         {
         const { fn_search_ismatch } = yy.fns;
         const parameters = $3;
-        $$ = { type: "FN_SEARCH_ISMATCH", ...parameters, apply: (input) => parameters.apply(input, fn_search_ismatch) };
+        const canApply = () => [];
+        const apply = (input) => parameters.apply(input, fn_search_ismatch);
+        $$ = { type: "FN_SEARCH_ISMATCH", ...parameters, apply };
         }
     }
     | FN_SEARCH_ISMATCHSCORING GROUP_OPEN search_is_match_parameters GROUP_CLOSE
@@ -353,7 +383,9 @@ search_is_match_call
         {
         const { fn_search_ismatchscoring } = yy.fns;
         const parameters = $3;
-        $$ = { type: "FN_SEARCH_ISMATCHSCORING", ...parameters, apply: (input) => parameters.apply(input, fn_search_ismatchscoring) };
+        const canApply = () => [];
+        const apply = (input) => parameters.apply(input, fn_search_ismatchscoring);
+        $$ = { type: "FN_SEARCH_ISMATCHSCORING", ...parameters, apply };
         }
     }
     ;
@@ -363,7 +395,9 @@ search_is_match_parameters
         //
         {
         const search = $1;
-        $$ = { search, apply: (input, fn) => fn(input, search.value) };
+        const canApply = () => [];
+        const apply = (input, fn) => fn(input, search.value);
+        $$ = { search, apply };
         }
     }
     | string_literal LIST_SEPARATOR string_literal
@@ -372,7 +406,9 @@ search_is_match_parameters
         {
         const search = $1;
         const searchFields = $3;
-        $$ = { search, searchFields, apply: (input, fn) => fn(input, search.value, searchFields.value) };
+        const canApply = () => [];
+        const apply = (input, fn) => fn(input, search.value, searchFields.value);
+        $$ = { search, searchFields, apply };
         }
     }
     | string_literal LIST_SEPARATOR string_literal LIST_SEPARATOR QUERY_TYPE LIST_SEPARATOR SEARCH_MODE
@@ -383,7 +419,9 @@ search_is_match_parameters
         const searchFields = $3;
         const queryType = $5.slice(1, -1);
         const searchMode = $7.slice(1, -1);
-        $$ = { search, searchFields, queryType, searchMode, apply: (input, fn) => fn(input, search.value, searchFields.value, queryType, searchMode) };
+        const canApply = () => [];
+        const apply = (input, fn) => fn(input, search.value, searchFields.value, queryType, searchMode);
+        $$ = { search, searchFields, queryType, searchMode, apply };
         }
     }
     ;

@@ -15,7 +15,7 @@ export interface JisonParserError {
   set message(msg);
 }
 
-type DeepMergeExtendedOptions = deepmerge.Options & {
+export type DeepMergeExtendedOptions = deepmerge.Options & {
   isMergeableObject(value: unknown): boolean,
   cloneUnlessOtherwiseSpecified(value: unknown, options: deepmerge.Options): unknown,
 };

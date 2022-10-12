@@ -36,6 +36,7 @@ select_expression
     : WILDCARD EOF
     {
         yy.ast.value = { type: "WILDCARD" };
+        yy.ast.canApply = () => [];
         yy.ast.apply = (input) => input;
     }
     | variable (LIST_SEPARATOR variable)* EOF
@@ -44,6 +45,8 @@ select_expression
         {
         const { mergeDeep, mergeSequence } = yy.deps;
         const keys = [$1, ...$2.map(([sep, clause]) => clause)];
+        const canApply = (schema, require) => keys
+            .reduce((acc, cur) => [...acc, ...cur.canApply(schema, require)], []);
         const apply = (input) => keys
             .reduce((acc, cur) => mergeDeep(
                     acc,
@@ -52,7 +55,9 @@ select_expression
                 ),
                 {}
             );
+
         yy.ast.value = { type: "LIST", value: keys };
+        yy.ast.canApply = canApply;
         yy.ast.apply = apply;
         }
     }
@@ -64,17 +69,22 @@ variable
     {
         //
         {
-        const { getStruct } = yy.deps;
+        const { getStruct, matchSchema } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        $$ = { type: "FIELD_PATH", value, apply: (input) => getStruct(input, value) };
+        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const apply = (input) => getStruct(input, value);
+        $$ = { type: "FIELD_PATH", value, canApply, apply };
         }
     }
     | IDENTIFIER
     {
         //
         {
+        const { matchSchema } = yy.deps;
         const value = $1;
-        $$ = { type: "IDENTIFIER", value, apply: (input) => ({ [value]: input[value] }) };
+        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const apply = (input) => ({ [value]: input[value] });
+        $$ = { type: "IDENTIFIER", value, canApply, apply };
         }
     }
     ;

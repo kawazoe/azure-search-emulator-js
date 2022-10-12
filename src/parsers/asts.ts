@@ -1,3 +1,5 @@
+import { FlatSchema } from '../services/schema';
+
 export type AstIdentifier = { type: 'IDENTIFIER', value: string };
 export type AstFieldPath = { type: 'FIELD_PATH', value: string[] };
 
@@ -74,4 +76,8 @@ export type FacetParamsAst = {
 };
 export type FacetResult = { params: FacetParamsAst, results: Record<string, number> };
 export type FacetResults = Record<string, FacetResult>;
-export type FacetAst = { field: string, params: FacetParamsAst, apply: <T>(accumulator: FacetResults, input: T) => FacetResults };
+export type FacetActions = {
+  canApply: (schema: FlatSchema) => string[],
+  apply: <T>(accumulator: FacetResults, input: T) => FacetResults,
+};
+export type FacetAst = { field: string, params: FacetParamsAst };

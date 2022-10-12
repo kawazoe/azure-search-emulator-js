@@ -10,6 +10,10 @@ export function getValue(input: any, [first, ...rest]: string[]): unknown {
     throw new Error('Invalid operation. Second parameter requires at least one value.');
   }
 
+  if (input == null) {
+    return input;
+  }
+
   return rest.length
     ? Array.isArray(input[first])
       ? input[first].map((v: any) => getValue(v, rest))
@@ -19,6 +23,10 @@ export function getValue(input: any, [first, ...rest]: string[]): unknown {
 export function getStruct(input: any, [first, ...rest]: string[]): unknown {
   if (first == null) {
     throw new Error('Invalid operation. Second parameter requires at least one value.');
+  }
+
+  if (input == null) {
+    return { [first]: input };
   }
 
   return {

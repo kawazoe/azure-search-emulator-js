@@ -1,5 +1,6 @@
+import type { ODataSelect, ODataSelectResult } from '../lib/odata';
+
 import { DataStore } from './dataStore';
-import { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {
   filter?: string;          //< OData Filter expression

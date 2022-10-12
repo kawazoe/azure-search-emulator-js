@@ -1,6 +1,9 @@
-import { JisonParser } from './jison-parser';
-import { SelectAst } from './asts';
-import { ODataSelect, ODataSelectResult } from '../lib/odata';
+import type { JisonParser } from './jison-parser';
+import type { SelectAst } from './asts';
 
-declare const parser: JisonParser<SelectAst & { apply: <T extends object, Keys extends ODataSelect<T> = never>(input: T) => Keys extends never ? T : ODataSelectResult<T, Keys> }>;
+export type SelectActions = {
+  canApply: (schema: unknown, require: unknown) => string[],
+  apply: (input: unknown) => unknown
+};
+declare const parser: JisonParser<SelectAst & SelectActions>;
 export default parser;

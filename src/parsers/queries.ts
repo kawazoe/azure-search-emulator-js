@@ -1,20 +1,21 @@
-import _filter from './query-filter';
-import _orderBy from './query-orderby';
-import _select from './query-select';
+import _filter, { FilterActions } from './query-filter';
+import _orderBy, { OrderByActions } from './query-orderby';
+import _select, { SelectActions } from './query-select';
 
 import deepmerge from 'deepmerge';
 
-import { ODataSelect, ODataSelectResult } from '../lib/odata';
 import { getStruct, getValue } from '../lib/objects';
-import { MergeSequenceFunction } from './jison-parser';
+
+import type { MergeSequenceFunction } from './jison-parser';
 import type {
   FilterAst,
   OrderByAst,
   SelectAst,
   FacetAst,
   FacetParamsAst,
-  FacetResults
+  FacetResults, FacetActions
 } from './asts';
+import { FlatSchema, matchFieldRequirement, SchemaMatcherRequirements } from '../services/schema';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
@@ -38,12 +39,18 @@ function compare<T>(left: T, right: T): -1 | 0 | 1 {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function matchSchema(schema: FlatSchema, require: SchemaMatcherRequirements, fieldPath: string[]): [] | [string] {
+  const result = matchFieldRequirement(schema, fieldPath.join('/'), require);
+  return result ? [result] : [];
+}
+
 const dependencies = {
   mergeDeep,
   mergeSequence,
   compare,
   getValue,
   getStruct,
+  matchSchema,
 };
 
 function fn_search_score(input: Record<string, unknown>) {
@@ -113,32 +120,53 @@ function fn_search_ismatchscoring(input: any, search: string, searchFields?: str
 export const filter = {
   ..._filter,
   parse: (input: string) => {
-    const ast = {} as FilterAst & { apply: <T>(input: T) => number};
+    const ast = {} as FilterAst & FilterActions;
     _filter.parse(input, ast, dependencies, { fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
-    return ast;
+    return {
+      ...ast,
+      canApply: (schema: FlatSchema) => ast.canApply(schema, 'filterable'),
+    };
   }
 };
 export const orderBy = {
   ..._orderBy,
   parse: (input: string) => {
-    const ast = {} as OrderByAst & { apply: <T>(left: T, right: T) => -1 | 0 | 1 };
+    const ast = {} as OrderByAst & OrderByActions;
     _orderBy.parse(input, ast, dependencies, { fn_search_score });
-    return ast;
+    return {
+      ...ast,
+      canApply: (schema: FlatSchema) => ast.canApply(schema, 'sortable'),
+    };
   }
 };
 export const select = {
   ..._select,
   parse: (input: string) => {
-    const ast = {} as SelectAst & { apply: <T extends object, Keys extends ODataSelect<T> = never>(input: T) => Keys extends never ? T : ODataSelectResult<T, Keys> };
+    const ast = {} as SelectAst & SelectActions;
     _select.parse(input, ast, dependencies, {});
-    return ast;
+    return {
+      ...ast,
+      canApply: (schema: FlatSchema) => ast.canApply(schema, 'retrievable'),
+    };
+  }
+};
+
+export const search = {
+  ..._select,
+  parse: (input: string) => {
+    const ast = {} as SelectAst & SelectActions;
+    _select.parse(input, ast, dependencies, {});
+    return {
+      ...ast,
+      canApply: (schema: FlatSchema) => ast.canApply(schema, 'searchable'),
+    };
   }
 };
 // TODO: highlight supports additional features like some/field/path-number to limit the highlight count
-export const highlight = select;
+export const highlight = search;
 
 export const facet = {
-  parse: (input: string): FacetAst => {
+  parse: (input: string): FacetAst & FacetActions => {
     const [field, ...candidateParams] = input
       .split(',')
       .map(s => s.trim());
@@ -191,7 +219,12 @@ export const facet = {
 
     const fieldPath = field.split('/');
 
-    const apply = <T>(accumulator: FacetResults, input: T) => {
+    function canApply(schema: FlatSchema) {
+      const result = matchFieldRequirement(schema, field, 'facetable');
+      return result ? [result] : [];
+    }
+
+    function apply<T>(accumulator: FacetResults, input: T) {
       if (!accumulator[field]) {
         accumulator[field] = {
           params,
@@ -207,6 +240,6 @@ export const facet = {
       return accumulator;
     }
 
-    return { field, params, apply };
+    return { field, params, canApply, apply };
   }
 }

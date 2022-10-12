@@ -45,6 +45,8 @@ order_by_expression
         {
         const { mergeDeep, mergeSequence } = yy.deps;
         const keys = [$1, ...$2.map(([sep, clause]) => clause)];
+        const canApply = (schema, require) => keys
+            .reduce((acc, cur) => [...acc, ...cur.canApply(schema, require)], []);
         const apply = (left, right) => {
             for (const key of keys) {
                 const result = key.apply(left, right);
@@ -54,7 +56,9 @@ order_by_expression
             }
             return 0;
         };
+
         yy.ast.value = { type: "LIST", value: keys };
+        yy.ast.canApply = canApply;
         yy.ast.apply = apply;
         }
     }
@@ -67,8 +71,9 @@ order_by_clause
         {
         const target = $1;
         const direction = $2 || "asc";
+        const canApply = target.canApply;
         const apply = (left, right) => direction === 'desc' ? target.apply(right, left) : target.apply(left, right);
-        $$ = { type: "ORDER", target, direction, apply };
+        $$ = { type: "ORDER", target, direction, canApply, apply };
         }
     }
     | sortable_function (ORDER_ASCENDING | ORDER_DESCENDING)?
@@ -77,8 +82,9 @@ order_by_clause
         {
         const target = $1;
         const direction = $2 || "asc";
+        const canApply = target.canApply;
         const apply = (left, right) => direction === 'desc' ? target.apply(right, left) : target.apply(left, right);
-        $$ = { type: "ORDER", target, direction, apply };
+        $$ = { type: "ORDER", target, direction, canApply, apply };
         }
     }
     ;
@@ -89,8 +95,9 @@ sortable_function
         {
         const { compare } = yy.deps;
         const fn_search_score = yy.fns.fn_search_score;
+        const canApply = () => [];
         const apply = (left, right) => compare(fn_search_score(left), fn_search_score(right));
-        $$ = { type: "FN_SEARCH_SCORE", apply };
+        $$ = { type: "FN_SEARCH_SCORE", canApply, apply };
         }
     }
     ;
@@ -101,20 +108,22 @@ variable
     {
         //
         {
-        const { compare, getValue } = yy.deps;
+        const { compare, getValue, matchSchema } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
+        const canApply = (schema, require) => matchSchema(schema, require, value);
         const apply = (left, right) => compare(getValue(left, value), getValue(right, value));
-        $$ = { type: "FIELD_PATH", value, apply };
+        $$ = { type: "FIELD_PATH", value, canApply, apply };
         }
     }
     | IDENTIFIER
     {
         //
         {
-        const { compare } = yy.deps;
+        const { compare, matchSchema } = yy.deps;
         const value = $1;
+        const canApply = (schema, require) => matchSchema(schema, require, value);
         const apply = (left, right) => compare(left[value], right[value]);
-        $$ = { type: "IDENTIFIER", value, apply };
+        $$ = { type: "IDENTIFIER", value, canApply, apply };
         }
     }
     ;

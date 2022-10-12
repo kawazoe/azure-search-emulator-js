@@ -1,12 +1,16 @@
 import { _throw } from './lib/_throw';
-
-import { FieldDefinition } from './services/schema';
-import { DataStore, FindDocumentRequest, PostDocumentsRequest } from './services/dataStore';
 import { createHttp404 } from './lib/http';
-import { SearchDocumentsPageResult, SearchDocumentsRequest, SearchEngine } from './services/searchEngine';
-import { ODataSelect, ODataSelectResult } from './lib/odata';
-import { SuggestDocumentsResult, SuggestEngine, SuggestRequest } from './services/suggestEngine';
-import { AutocompleteEngine, AutoCompleteRequest, AutoCompleteResult } from './services/autocompleteEngine';
+import type { ODataSelect, ODataSelectResult } from './lib/odata';
+
+import type { FieldDefinition } from './services/schema';
+import type { FindDocumentRequest, PostDocumentsRequest } from './services/dataStore';
+import { DataStore } from './services/dataStore';
+import type { SearchDocumentsPageResult, SearchDocumentsRequest } from './services/searchEngine';
+import { SearchEngine } from './services/searchEngine';
+import type { SuggestDocumentsResult, SuggestRequest } from './services/suggestEngine';
+import { SuggestEngine } from './services/suggestEngine';
+import type { AutoCompleteRequest, AutoCompleteResult } from './services/autocompleteEngine';
+import { AutocompleteEngine } from './services/autocompleteEngine';
 
 export class Index<T extends object> {
   public static createIndex<T extends object>(
@@ -19,7 +23,7 @@ export class Index<T extends object> {
     return new Index<T>(
       name,
       dataStore,
-      new SearchEngine<T>(dataStore),
+      new SearchEngine<T>(() => dataStore.flatSchema, () => dataStore.documents),
       new SuggestEngine<T>(dataStore),
       new AutocompleteEngine<T>(dataStore),
     );
@@ -46,7 +50,7 @@ export class Index<T extends object> {
    * https://learn.microsoft.com/en-us/rest/api/searchservice/lookup-document
    * @param request
    */
-  public findDocument(request: FindDocumentRequest) {
+  public findDocument<Keys extends ODataSelect<T>>(request: FindDocumentRequest<T, Keys>): ODataSelectResult<T, Keys> {
     return this.dataStore.findDocument(request);
   }
 

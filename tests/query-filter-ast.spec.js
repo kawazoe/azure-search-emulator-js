@@ -7,7 +7,7 @@ describe('query-select', () => {
     function isPojo(candidate) {
       return candidate != null && typeof candidate === 'object' && candidate.__proto__.constructor.name === 'Object';
     }
-    function removeApplyDeep({ apply, ...rest }) {
+    function removeApplyDeep({ canApply, apply, ...rest }) {
       for (const k in rest) {
         if (!rest.hasOwnProperty(k)) {
           break;

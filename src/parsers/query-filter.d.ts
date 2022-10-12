@@ -1,5 +1,9 @@
-import { JisonParser } from './jison-parser';
-import { FilterAst } from './asts';
+import type { JisonParser } from './jison-parser';
+import type { FilterAst } from './asts';
 
-declare const parser: JisonParser<FilterAst & { apply: <T>(input: T) => number }>;
+export type FilterActions = {
+  canApply: (schema: unknown, require: unknown) => string[],
+  apply: <T>(input: T) => number,
+}
+declare const parser: JisonParser<FilterAst & FilterActions>;
 export default parser;
