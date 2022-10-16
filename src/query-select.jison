@@ -35,7 +35,7 @@
 select_expression
     : WILDCARD EOF
     {
-        yy.ast.value = { type: "WILDCARD" };
+        yy.ast.type = "WILDCARD";
         yy.ast.canApply = () => [];
         yy.ast.apply = (input) => input;
     }
@@ -56,7 +56,8 @@ select_expression
                 {}
             );
 
-        yy.ast.value = { type: "LIST", value: keys };
+        yy.ast.type = "LIST";
+        yy.ast.value = keys;
         yy.ast.canApply = canApply;
         yy.ast.apply = apply;
         }
@@ -82,7 +83,7 @@ variable
         {
         const { matchSchema } = yy.deps;
         const value = $1;
-        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const canApply = (schema, require) => matchSchema(schema, require, [value]);
         const apply = (input) => ({ [value]: input[value] });
         $$ = { type: "IDENTIFIER", value, canApply, apply };
         }

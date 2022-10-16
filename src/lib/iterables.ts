@@ -45,6 +45,7 @@ export function reduce<T>(callbackfn: (previousValue: T, currentValue: T, curren
 export function reduce<T>(callbackfn: (previousValue: T, currentValue: T, currentIndex: number) => T, initialValue: T): (source: Iterable<T>) => T;
 export function reduce<T, R>(callbackfn: (previousValue: T, currentValue: T, currentIndex: number) => T, initialValue: T, resultSelector: (accumulator: T) => R): (source: Iterable<T>) => R;
 export function reduce<T, U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number) => U, initialValue: U): (source: Iterable<T>) => U;
+export function reduce<T, U, R>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number) => U, initialValue: U, resultSelector: (accumulator: U) => R): (source: Iterable<T>) => R;
 export function reduce<T, U, R = U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number) => U, initialValue: U, resultSelector: (accumulator: U) => R): (source: Iterable<T>) => R;
 export function reduce<T, U, R = U>(
   ...args:
@@ -119,6 +120,31 @@ export function groupBy<T, K, R>(keySelector: (value: T) => K, resultSelector?: 
     },
     [] as { key: K, results: R[] }[],
   );
+}
+
+export function uniq<T>(): (source: Iterable<T>) => Iterable<T>;
+export function uniq<T, K>(keySelector: (value: T) => K): (source: Iterable<T>) => Iterable<T>;
+export function uniq<T, K>(keySelector?: (value: T) => K): (source: Iterable<T>) => Iterable<T> {
+  if (!keySelector) {
+    return function (source: Iterable<T>) {
+      return new Set(source);
+    }
+  }
+
+  return function *(source: Iterable<T>): Iterable<T> {
+    const sentinel = new Set<K | T>();
+
+    for (const value of source) {
+      const key = keySelector(value);
+
+      const previousSize = sentinel.size;
+      sentinel.add(key);
+
+      if (previousSize !== sentinel.size) {
+        yield value;
+      }
+    }
+  }
 }
 
 export function *flatten<T>(source: Iterable<Iterable<T>>): Iterable<T> {

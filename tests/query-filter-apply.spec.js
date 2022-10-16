@@ -31,12 +31,12 @@ describe('query-select', () => {
     itShouldFilter(
       'foo eq 41 and bar gt 41',
       [{ foo: 41, bar: 42 }, { fo: 42 }, { foo: 42, bar: 41 }],
-      [[1, { foo: 41, bar: 42 }], [0, { fo: 42 }], [0, { foo: 42, bar: 41 }]]
+      [[2, { foo: 41, bar: 42 }], [0, { fo: 42 }], [0, { foo: 42, bar: 41 }]]
     )
     itShouldFilter(
       'foo eq 41 and (bar gt 41 or fo eq null)',
       [{ foo: 41, bar: 42 }, { fo: 42 }, { foo: 42, bar: 41 }],
-      [[2, { foo: 41, bar: 42 }], [0, { fo: 42 }], [0, { foo: 42, bar: 41 }]]
+      [[4, { foo: 41, bar: 42 }], [0, { fo: 42 }], [0, { foo: 42, bar: 41 }]]
     )
     itShouldFilter(
       'foo/bar eq 41',

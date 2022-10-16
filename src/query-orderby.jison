@@ -57,7 +57,8 @@ order_by_expression
             return 0;
         };
 
-        yy.ast.value = { type: "LIST", value: keys };
+        yy.ast.type = "LIST";
+        yy.ast.value = keys;
         yy.ast.canApply = canApply;
         yy.ast.apply = apply;
         }
@@ -121,7 +122,7 @@ variable
         {
         const { compare, matchSchema } = yy.deps;
         const value = $1;
-        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const canApply = (schema, require) => matchSchema(schema, require, [value]);
         const apply = (left, right) => compare(left[value], right[value]);
         $$ = { type: "IDENTIFIER", value, canApply, apply };
         }

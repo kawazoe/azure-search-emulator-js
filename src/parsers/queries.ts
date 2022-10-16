@@ -6,14 +6,15 @@ import deepmerge from 'deepmerge';
 
 import { getStruct, getValue } from '../lib/objects';
 
-import type { MergeSequenceFunction } from './jison-parser';
+import type { MergeSequenceFunction} from './jison-parser';
 import type {
   FilterAst,
   OrderByAst,
   SelectAst,
   FacetAst,
   FacetParamsAst,
-  FacetResults, FacetActions
+  FacetResults,
+  FacetActions
 } from './asts';
 import { FlatSchema, matchFieldRequirement, SchemaMatcherRequirements } from '../services/schema';
 
@@ -117,8 +118,16 @@ function fn_search_ismatchscoring(input: any, search: string, searchFields?: str
     }, 0);
 }
 
-export const filter = {
-  ..._filter,
+export type ParserResult<TAst, TActions> = TAst & Omit<TActions, 'canApply'> & {
+  canApply: (schema: FlatSchema) => string[]
+};
+export type Parser<R> = {
+  parse: (input: string) => R,
+};
+
+export type FilterParserResult = ParserResult<FilterAst, FilterActions>;
+export type FilterParser = Parser<FilterParserResult>;
+export const filter: FilterParser = {
   parse: (input: string) => {
     const ast = {} as FilterAst & FilterActions;
     _filter.parse(input, ast, dependencies, { fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
@@ -128,8 +137,10 @@ export const filter = {
     };
   }
 };
-export const orderBy = {
-  ..._orderBy,
+
+export type OrderByParserResult = ParserResult<OrderByAst, OrderByActions>;
+export type OrderByParser = Parser<OrderByParserResult>;
+export const orderBy: OrderByParser = {
   parse: (input: string) => {
     const ast = {} as OrderByAst & OrderByActions;
     _orderBy.parse(input, ast, dependencies, { fn_search_score });
@@ -139,8 +150,10 @@ export const orderBy = {
     };
   }
 };
-export const select = {
-  ..._select,
+
+export type SelectParserResult = ParserResult<SelectAst, SelectActions>;
+export type SelectParser = Parser<SelectParserResult>;
+export const select: SelectParser = {
   parse: (input: string) => {
     const ast = {} as SelectAst & SelectActions;
     _select.parse(input, ast, dependencies, {});
@@ -151,8 +164,9 @@ export const select = {
   }
 };
 
-export const search = {
-  ..._select,
+export type SearchParserResult = ParserResult<SelectAst, SelectActions>;
+export type SearchParser = Parser<SearchParserResult>;
+export const search: SearchParser = {
   parse: (input: string) => {
     const ast = {} as SelectAst & SelectActions;
     _select.parse(input, ast, dependencies, {});
@@ -162,11 +176,16 @@ export const search = {
     };
   }
 };
-// TODO: highlight supports additional features like some/field/path-number to limit the highlight count
-export const highlight = search;
 
-export const facet = {
-  parse: (input: string): FacetAst & FacetActions => {
+export type HighlighParserResult = ParserResult<SelectAst, SelectActions>;
+export type HighlighParser = Parser<HighlighParserResult>;
+// TODO: highlight supports additional features like some/field/path-number to limit the highlight count
+export const highlight: HighlighParser = search;
+
+export type FacetParserResult = ParserResult<FacetAst, FacetActions>;
+export type FacetParser = Parser<FacetParserResult>;
+export const facet: FacetParser = {
+  parse: (input: string) => {
     const [field, ...candidateParams] = input
       .split(',')
       .map(s => s.trim());

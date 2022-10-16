@@ -78,9 +78,9 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 filter_expression
     : boolean_expression EOF
     {
-        yy.ast.value = $1;
-        yy.ast.canApply = $1.canApply;
-        yy.ast.apply = $1.apply;
+        for (const k in $1) {
+            yy.ast[k] = $1[k];
+        }
     }
     ;
 
@@ -121,7 +121,7 @@ variable
         {
         const { getValue, matchSchema } = yy.deps;
         const value = $1;
-        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const canApply = (schema, require) => matchSchema(schema, require, [value]);
         const apply = (input) => input[value];
         $$ = { type: "IDENTIFIER", value, canApply, apply };
         }
@@ -202,7 +202,7 @@ logical_expression
         const left = $1;
         const right = $3;
         const canApply = (schema, require) => [...left.canApply(schema, require), ...right.canApply(schema, require)];
-        const apply = (input) => left.apply(input) * right.apply(input);
+        const apply = (input) => left.apply(input) * right.apply(input) * 2;
         $$ = { type: "AND_EXPRESSION", left, right, canApply, apply };
         }
     }

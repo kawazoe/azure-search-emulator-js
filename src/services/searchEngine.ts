@@ -1,6 +1,5 @@
 import { pipe } from '../lib/functions';
 import {
-  asIterable,
   filter,
   flatten,
   identity,
@@ -11,7 +10,8 @@ import {
   take,
   toArray,
   toIterable,
-  toRecord
+  toRecord,
+  uniq
 } from '../lib/iterables';
 import { getValue } from '../lib/objects';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
@@ -49,7 +49,7 @@ export interface SearchFacetRange extends SearchFacetBase {
   from: unknown;
   to: unknown;
 }
-export type SearchHighlights = Record<string, string[]>;
+export type SearchHighlights = Record<string, FieldDefinition['type'] | string[]>;
 export interface SearchFeature {
   uniqueTokenMatches: number;
   similarityScore: number;
@@ -71,10 +71,19 @@ export interface SearchDocumentsPageResult<T extends object> {
   '@odata.nextLink'?: string;
 }
 
+const defaultPageSize = 50;
+const maxPageSize = 1000;
+
+const maxHighlightPadding = 30;
+
 function toPaths(ast: Parsers.SelectAst) {
-  return Array.isArray(ast)
-    ? ast.map(f => Array.isArray(f.value) ? f.value.join('/') : f.value)
-    : [];
+  return ast.type === 'WILDCARD'
+    ? []
+    : ast.value.map(f =>
+      Array.isArray(f.value)
+        ? f.value.join('/')
+        : f.value
+    );
 }
 
 function isFieldSearchable(searchFields: Parsers.SelectAst): (field: [string, FieldDefinition]) => boolean {
@@ -93,8 +102,19 @@ function isFieldSearchable(searchFields: Parsers.SelectAst): (field: [string, Fi
   };
 }
 
-const defaultSearchScoreMapper = () => ({ match: true, score: 0, highlights: {}, features: {}});
-function createSearchScoreMapper(
+function defaultFilterScoreMapper() {
+  return { filterMatch: true, filterScore: 0 };
+}
+
+function createFilterScoreMapper<T>(filterCommand: Parsers.FilterParserResult) {
+  return (document: T) => {
+    const filterScore = filterCommand.apply(document);
+    return ({ filterMatch: filterScore > 0, filterScore });
+  };
+}
+
+const defaultSearchScoreMapper = () => ({ searchMatch: true, searchScore: 0, highlights: {}, features: {}});
+function createSearchScoreMapper<T>(
   searchables: FlatSchema,
   highlights: Parsers.SelectAst,
   highlightPostTag: string,
@@ -102,32 +122,21 @@ function createSearchScoreMapper(
   searchText: string,
 ) {
   const highlightsPaths = toPaths(highlights);
-
   const searchRegex = new RegExp(searchText, 'g');
 
-  function matchAll(value: string | string[]) {
-    if (Array.isArray(value)) {
-      return value
-        .map(str => Array.from(str.matchAll(searchRegex)))
-        .reduce((a, c) => [...a, ...c], []);
-    }
-
-    return Array.from(value.matchAll(searchRegex));
-  }
-
-  function matchAllByField(field: FieldDefinition, value: unknown): RegExpMatchArray[] {
+  function normalizeValue(field: FieldDefinition, value: unknown): string[] {
     switch (field.type) {
       case 'Edm.String':
-        return matchAll(value as string);
+        return [value as string];
       case 'Collection(Edm.String)':
-        return matchAll(value as string[]);
+        return value as string[];
       default:
         return [];
     }
   }
 
-  return (document: Record<string, unknown>) => {
-    const { score, highlights, features } = searchables.reduce(
+  return (document: T) => {
+    const { searchScore, highlights, features } = searchables.reduce(
       (acc, [path, last]) => {
         const value = getValue(document, path.split('/'));
 
@@ -135,7 +144,13 @@ function createSearchScoreMapper(
           return acc;
         }
 
-        const matches = matchAllByField(last, value);
+        const normalized = normalizeValue(last, value);
+        const matches = pipe(
+          normalized,
+          map(str => Array.from(str.matchAll(searchRegex))),
+          flatten,
+          toArray,  //< Required since RegExpMatchArray doesn't directly iterate with the same result
+        );
         const tokens  = pipe(
           matches,
           flatten,
@@ -143,37 +158,44 @@ function createSearchScoreMapper(
         ) as string[];
 
         if (tokens.length) {
-          acc.score += sum(tokens.map(t => t.length));
+          acc.searchScore += sum(tokens.map(t => t.length));
 
-          const uniqueTokens = Array.from(new Set(tokens));
-          const valueLength = Array.isArray(value)
-            ? sum((value as string[]).map(v => v.length))
-            : (value as string).length;
-
-          const matchedLength = sum(uniqueTokens.map(h => h.length));
+          const uniqueTokens = pipe(tokens, uniq(), toArray);
+          const valueLength = sum(normalized.map(v => v.length));
+          const matchedLength = sum(tokens.map(h => h.length));
 
           if (highlightsPaths.includes(path)) {
-            acc.highlights[last.name] = uniqueTokens.map(t => `${highlightPreTag}${t}${highlightPostTag}`);
+            acc.highlights[`${last.name}@odata.type`] = last.type;
+            acc.highlights[last.name] = pipe(
+              matches,
+              map(m => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' })),
+              uniq(m => m.match),
+              map(m => {
+                const leftPadding = m.input.slice(Math.max(0, m.index - maxHighlightPadding), m.index);
+                const rightPadding = m.input.slice(m.index + m.match.length, m.index + m.match.length + maxHighlightPadding);
+                return `${leftPadding}${highlightPreTag}${m.match}${highlightPostTag}${rightPadding}`;
+              }),
+              toArray,
+            );
           }
 
           acc.features[last.name] = {
             uniqueTokenMatches: uniqueTokens.length,
-            similarityScore: matchedLength / valueLength,
+            similarityScore: valueLength === 0
+              ? 0
+              : (matchedLength / valueLength),
             termFrequency: tokens.length,
           }
         }
 
         return acc;
       },
-      { score: 0, highlights: {} as SearchHighlights, features: {} as SearchFeatures }
+      { searchScore: 0, highlights: {} as SearchHighlights, features: {} as SearchFeatures }
     );
 
-    return { match: score !== 0, score, highlights, features };
+    return { searchMatch: searchScore > 0, searchScore, highlights, features };
   }
 }
-
-const defaultPageSize = 50;
-const maxPageSize = 1000;
 
 export class SearchEngine<T extends object> {
   constructor(
@@ -183,68 +205,86 @@ export class SearchEngine<T extends object> {
   }
 
   public search<Keys extends ODataSelect<T>>(request: SearchDocumentsRequest<T, Keys>): SearchDocumentsPageResult<ODataSelectResult<T, Keys>> {
-    const filterAst = request.filter && Parsers.filter.parse(request.filter) || undefined;
-    const orderByAst = request.orderBy && Parsers.orderBy.parse(request.orderBy.join(', ')) || undefined;
-    const selectAst = request.select && Parsers.select.parse(request.select.join(', ')) || undefined;
-    const searchFieldsAst = request.searchFields && Parsers.search.parse(request.searchFields) || undefined;
-    const highlightAst = request.highlight && Parsers.highlight.parse(request.highlight) || undefined;
-    const facetAst = request.facets && request.facets.map(f => Parsers.facet.parse(f)) || undefined;
+    const filterCommand = request.filter && Parsers.filter.parse(request.filter) || undefined;
+    const orderByCommand = request.orderBy && Parsers.orderBy.parse(request.orderBy.join(', ')) || undefined;
+    const selectCommand = request.select && Parsers.select.parse(request.select.join(', ')) || undefined;
+    const searchFieldsCommand = request.searchFields && Parsers.search.parse(request.searchFields) || undefined;
+    const highlightCommand = request.highlight && Parsers.highlight.parse(request.highlight) || undefined;
+    const facetCommand = request.facets && request.facets.map(f => Parsers.facet.parse(f)) || undefined;
 
     const requirementFailures: string[] = [
-      ...(filterAst?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(orderByAst?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(selectAst?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(searchFieldsAst?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(highlightAst?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(pipe(facetAst ?? [], map(f => f.canApply(this.flatSchemaProvider())), flatten)),
+      ...(filterCommand?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(orderByCommand?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(selectCommand?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(searchFieldsCommand?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(highlightCommand?.canApply(this.flatSchemaProvider()) ?? []),
+      ...(pipe(facetCommand ?? [], map(f => f.canApply(this.flatSchemaProvider())), flatten)),
     ];
 
     if (requirementFailures.length) {
       throw new SchemaError('Part of the request is not compatible with the current schema', requirementFailures);
     }
 
+    const filterScoreMapper = filterCommand
+      ? createFilterScoreMapper(filterCommand)
+      : defaultFilterScoreMapper;
+
     const searchScoreMapper = request.search
       ? createSearchScoreMapper(
         // TODO: Reverse the algorithm to scan pre-applied documents instead of the schema
-        this.flatSchemaProvider().filter(isFieldSearchable(searchFieldsAst ?? [])),
-        highlightAst ?? [],
-        request.highlightPostTag ?? '',
-        request.highlightPreTag ?? '',
+        this.flatSchemaProvider().filter(isFieldSearchable(searchFieldsCommand ?? { type: 'WILDCARD' })),
+        highlightCommand ?? { type: 'LIST', value: [] },
+        request.highlightPostTag ?? '</em>',
+        request.highlightPreTag ?? '<em>',
         request.search,
       )
       : defaultSearchScoreMapper;
 
     const searchResults = pipe(
-      asIterable(this.documentsProvider()),
-      map(document => ({ document, filterScore: filterAst?.apply(document) ?? 1 })),
-      filter(({filterScore}) => filterScore >= 0),
-      map(({document, filterScore}) => ({ document, filterScore, ...searchScoreMapper(document as Record<string, unknown>) })),
-      filter(({match}) => match),
-      map(({document, filterScore, score, highlights, features}) => ({
+      this.documentsProvider(),
+      map(document => ({ document, ...filterScoreMapper(document) })),
+      filter(({filterMatch}) => filterMatch),
+      map(({document, filterScore}) => ({ document, filterScore, ...searchScoreMapper(document) })),
+      filter(({searchMatch}) => searchMatch),
+      map(({document, filterScore, searchScore, highlights, features}) => ({
         document,
         metas: {
-            '@search.score': filterScore + score,
+            '@search.score': filterScore + searchScore,
             '@search.highlights': highlights,
             '@search.features': features,
           }
       })),
-      reduce<
-        { document: T, metas: SearchDocumentMeta },
-        { facets: Parsers.FacetResults, results: [T, SearchDocumentMeta][] }
-      >(
-        (acc, {document, metas}) => {
-          if (facetAst) {
-            acc.facets = facetAst.reduce((a, c) => c.apply(a, document), acc.facets);
+      reduce(
+        (
+          acc: { facets: Parsers.FacetResults, results: [T, SearchDocumentMeta][] },
+          {document, metas}: {document: T, metas: SearchDocumentMeta}
+        ) => {
+          if (facetCommand) {
+            acc.facets = facetCommand.reduce((a, c) => c.apply(a, document), acc.facets);
           }
           acc.results.push([document, metas]);
           return acc;
         },
         { facets: {}, results: [] },
         acc => {
-          if (orderByAst) {
-            acc.results.sort(orderByAst.apply);
+          const selected: SearchResult<ODataSelectResult<T, Keys>>[] = selectCommand
+            ? acc.results.map(([r, meta]) => ({
+              ...selectCommand.apply(r) as ODataSelectResult<T, Keys>,
+              ...meta,
+            } as SearchResult<ODataSelectResult<T, Keys>>))
+            : acc.results.map(([r, meta]) => ({
+              ...r as unknown as ODataSelectResult<T, Keys>,
+              ...meta,
+            }));
+
+          if (orderByCommand) {
+            selected.sort(orderByCommand.apply);
           }
-          return acc;
+
+          return {
+            facets: acc.facets,
+            results: selected,
+          };
         }
       ),
     );
@@ -265,21 +305,12 @@ export class SearchEngine<T extends object> {
       toRecord,
     ) : undefined;
 
-    const selected: SearchResult<ODataSelectResult<T, Keys>>[] = selectAst
-      ? searchResults.results.map(([r, meta]) => ({
-        ...selectAst.apply(r) as ODataSelectResult<T, Keys>,
-        ...meta,
-      } as SearchResult<ODataSelectResult<T, Keys>>))
-      : searchResults.results.map(([r, meta]) => ({
-        ...r as unknown as ODataSelectResult<T, Keys>,
-        ...meta,
-      }));
     const skip = request.skip ?? 0;
     const top = request.top ?? defaultPageSize;
     const pageSize = Math.min(top, maxPageSize);
-    const limited = selected.slice(skip, skip + pageSize);
+    const limited = searchResults.results.slice(skip, skip + pageSize);
 
-    const nextPageRequest = top > maxPageSize && selected.length > skip + pageSize
+    const nextPageRequest = top > maxPageSize && searchResults.results.length > skip + pageSize
       ? {
         ...request,
         skip: skip + pageSize,

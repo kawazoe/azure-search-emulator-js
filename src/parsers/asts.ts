@@ -56,16 +56,18 @@ export type FilterAst =
   AstFnSearchIsMatch |
   AstFnSearchIsMatchScoring;
 
+export type AstList<T> = { type: 'LIST', value: T[] };
+
 export type AstFnSearchScore = { type: 'FN_SEARCH_SCORE' };
 export type AstOrder = { type: 'ORDER', target: AstIdentifier | AstFieldPath |  AstFnSearchScore, direction: 'asc' | 'desc' };
 
-export type OrderByAst = AstOrder[];
+export type OrderByAst = AstList<AstOrder>;
 
 export type AstWildcard = { type: 'WILDCARD' };
 
 export type SelectAst =
   AstWildcard |
-  (AstIdentifier | AstFieldPath)[];
+  AstList<AstIdentifier | AstFieldPath>;
 
 export type FacetParamsAst = {
   count: number,

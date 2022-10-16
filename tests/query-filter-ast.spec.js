@@ -7,16 +7,16 @@ describe('query-select', () => {
     function isPojo(candidate) {
       return candidate != null && typeof candidate === 'object' && candidate.__proto__.constructor.name === 'Object';
     }
-    function removeApplyDeep({ canApply, apply, ...rest }) {
+    function stripCompiledDeep({ canApply, apply, ...rest }) {
       for (const k in rest) {
         if (!rest.hasOwnProperty(k)) {
           break;
         }
 
         if (Array.isArray(rest[k])) {
-          rest[k] = rest[k].map(r => isPojo(r) ? removeApplyDeep(r) : r);
+          rest[k] = rest[k].map(r => isPojo(r) ? stripCompiledDeep(r) : r);
         } else if (isPojo(rest[k])) {
-          rest[k] = removeApplyDeep(rest[k]);
+          rest[k] = stripCompiledDeep(rest[k]);
         }
       }
 
@@ -27,7 +27,7 @@ describe('query-select', () => {
       it(`should select ${raw}`, () => {
         const ast = parser.parse(raw);
 
-        expect(removeApplyDeep(ast.value)).to.deep.equal(expected);
+        expect(stripCompiledDeep(ast)).to.deep.equal(expected);
       });
     }
 
