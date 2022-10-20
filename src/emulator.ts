@@ -7,26 +7,35 @@ import type { FindDocumentRequest, PostDocumentsRequest } from './services/dataS
 import { DataStore } from './services/dataStore';
 import type { SearchDocumentsPageResult, SearchDocumentsRequest } from './services/searchEngine';
 import { SearchEngine } from './services/searchEngine';
-import type { SuggestDocumentsResult, SuggestRequest } from './services/suggestEngine';
+import type { SuggestDocumentsResult, Suggester, SuggestRequest } from './services/suggestEngine';
 import { SuggestEngine } from './services/suggestEngine';
-import type { AutoCompleteRequest, AutoCompleteResult } from './services/autocompleteEngine';
+import type { AutoCompleteRequest, AutoCompleteDocumentResult } from './services/autocompleteEngine';
 import { AutocompleteEngine } from './services/autocompleteEngine';
 
 export class Index<T extends object> {
   public static createIndex<T extends object>(
     name: string,
-    schema: FieldDefinition[]
+    schema: FieldDefinition[],
+    suggesters: Record<string, Suggester>,
   ) {
 
     const dataStore = DataStore.createDataStore<T>(schema);
-
-    return new Index<T>(
-      name,
-      dataStore,
-      new SearchEngine<T>(() => dataStore.flatSchema, () => dataStore.documents),
-      new SuggestEngine<T>(dataStore),
-      new AutocompleteEngine<T>(dataStore),
+    const searchEngine = new SearchEngine<T>(
+      () => dataStore.flatSchema,
+      () => dataStore.documents
     );
+    const suggesterProvider = (name: string) => suggesters[name] ?? _throw(new Error(`Unknown suggester ${name}`));
+    const suggestEngine = new SuggestEngine<T>(
+      searchEngine,
+      () => dataStore.keyField,
+      suggesterProvider,
+    );
+    const autocompleteEngine = new AutocompleteEngine<T>(
+      searchEngine,
+      suggesterProvider,
+    )
+
+    return new Index<T>(name, dataStore, searchEngine, suggestEngine, autocompleteEngine);
   }
 
   private constructor(
@@ -73,7 +82,7 @@ export class Index<T extends object> {
    * https://learn.microsoft.com/en-us/rest/api/searchservice/autocomplete
    * @param request
    */
-  public autocomplete(request: AutoCompleteRequest): AutoCompleteResult {
+  public autocomplete(request: AutoCompleteRequest): AutoCompleteDocumentResult {
     return this.autocompleteEngine.autocomplete(request);
   }
 
@@ -92,8 +101,8 @@ export class Emulator {
   /**
    * https://learn.microsoft.com/en-us/rest/api/searchservice/create-index
    */
-  public createIndex(name: string, schema: FieldDefinition[]) {
-    this.indices.push(Index.createIndex(name, schema));
+  public createIndex(name: string, schema: FieldDefinition[], suggesters: Record<string, Suggester>) {
+    this.indices.push(Index.createIndex(name, schema, suggesters));
   }
 
   public getIndex<T extends {}>(name: string): Index<T> {

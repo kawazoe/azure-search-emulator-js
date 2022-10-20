@@ -93,13 +93,28 @@ export function take<T>(count: number) {
   }
 }
 
-export function sort<T>(comparer: (left: T, right: T) => -1 | 0 | 1) {
+export type Sortable = string | number | Date;
+export type SortStrategy<T> = (left: T, right: T) => -1 | 0 | 1;
+export function sort<T>(comparer: SortStrategy<T>) {
   return function (source: Iterable<T>): Iterable<T> {
     const results = Array.from(source);
     results.sort(comparer);
     return asIterable(results);
   }
 }
+function ascendingSortStrategy(l: Sortable, r: Sortable): -1 | 0 | 1 {
+  return l < r ? -1 : l > r ? 1 : 0;
+}
+function descendingSortStrategy(l: Sortable, r: Sortable): -1 | 0 | 1 {
+  return l < r ? 1 : l > r ? -1 : 0;
+}
+export function sortBy<T>(selector: (value: T) => Sortable, strategy: SortStrategy<Sortable> = sortBy.asc) {
+  return sort<T>((left, right) => {
+    return strategy(selector(left), selector(right));
+  });
+}
+sortBy.asc = ascendingSortStrategy;
+sortBy.desc = descendingSortStrategy;
 
 export function groupBy<T, K>(keySelector: (value: T) => K): (source: Iterable<T>) => Iterable<{ key: K, results: Iterable<T> }>;
 export function groupBy<T, K, R>(keySelector: (value: T) => K, resultSelector: (value: T) => R): (source: Iterable<T>) => Iterable<{ key: K, results: Iterable<R> }>

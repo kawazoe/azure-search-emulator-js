@@ -404,7 +404,7 @@ describe('SearchEngine', () => {
     it('should return nothing when empty', () => {
       const sut = createEmpty();
 
-      const results = sut.search({ orderBy: ['fullName'] });
+      const results = sut.search({ orderBy: 'fullName' });
 
       expect(results.value).toEqual([]);
     });
@@ -412,7 +412,7 @@ describe('SearchEngine', () => {
     it('should order results by query', () => {
       const sut = createBasic();
 
-      const results = sut.search({ orderBy: ['fullName'] });
+      const results = sut.search({ orderBy: 'fullName' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '2', fullName: 'bar' },
@@ -425,7 +425,7 @@ describe('SearchEngine', () => {
     it('should order results by query in order', () => {
       const sut = createBasic();
 
-      const results = sut.search({ orderBy: ['fullName desc', 'id desc'] });
+      const results = sut.search({ orderBy: 'fullName desc, id desc' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '1', fullName: 'foo' },
@@ -438,7 +438,7 @@ describe('SearchEngine', () => {
     it('should order results by meta', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'biz|bu|b', orderBy: ['search.score() desc'] });
+      const results = sut.search({ search: 'biz|bu|b', orderBy: 'search.score() desc' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '3', fullName: 'biz' },

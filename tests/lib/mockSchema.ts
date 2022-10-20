@@ -1,4 +1,4 @@
-import { FieldDefinition, FlatSchema, Schema } from '../../src/services/schema';
+import { FieldDefinition, FlatSchema, KeyFieldDefinition, Schema } from '../../src/services/schema';
 
 export type People = {
   id: string,
@@ -17,8 +17,9 @@ export type People = {
     deleted?: boolean,
   },
 }
+export const peopleSchemaKey: KeyFieldDefinition = { type: 'Edm.String', key: true, name: 'id' };
 export const peopleSchema: Schema = [
-  { type: 'Edm.String', key: true, name: 'id' },
+  peopleSchemaKey,
   { type: 'Edm.String', name: 'fullName' },
   { type: 'Collection(Edm.ComplexType)', name: 'addresses', fields: [
       { type: 'Edm.String', name: 'parts' },

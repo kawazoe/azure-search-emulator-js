@@ -29,11 +29,11 @@ export interface SearchDocumentsRequest<T extends object, Keys extends ODataSele
   highlightPreTag?: string;
   highlightPostTag?: string;
   minimumCoverage?: number;
-  orderBy?: string[];         //< OrderBy Expression
-  queryType?: 'simple' | 'full';
+  orderBy?: string;           //< OrderBy Expression
+  queryType?: 'simple' | 'full';  //< Not supported
   search?: string;            //< simple query expression
   searchFields?: string;      //< fields as ODataSelect
-  searchMode?: 'any' | 'all';
+  searchMode?: 'any' | 'all'; //< Not supported
   select?: Keys[];            //< fields as ODataSelect
   skip?: number;
   top?: number;
@@ -124,15 +124,24 @@ function createSearchScoreMapper<T>(
   const highlightsPaths = toPaths(highlights);
   const searchRegex = new RegExp(searchText, 'g');
 
-  function normalizeValue(field: FieldDefinition, value: unknown): string[] {
-    switch (field.type) {
-      case 'Edm.String':
-        return [value as string];
-      case 'Collection(Edm.String)':
-        return value as string[];
-      default:
-        return [];
-    }
+  /**
+   * When searching, we can look through:
+   * string
+   * string collections
+   * or collections of objects (recursively) with string or a string collection leaf
+   *
+   * This function converts any of those data sources to the same format.
+   * @param value
+   */
+  function normalizeValue(value: unknown): string[] {
+    return typeof value === 'string'
+      ? [value]
+      : pipe(
+        value as unknown[],
+        map(v => normalizeValue(v)),
+        flatten,
+        toArray,
+      ) as string[]
   }
 
   return (document: T) => {
@@ -144,7 +153,7 @@ function createSearchScoreMapper<T>(
           return acc;
         }
 
-        const normalized = normalizeValue(last, value);
+        const normalized = normalizeValue(value);
         const matches = pipe(
           normalized,
           map(str => Array.from(str.matchAll(searchRegex))),
@@ -154,6 +163,8 @@ function createSearchScoreMapper<T>(
         const tokens  = pipe(
           matches,
           flatten,
+          // Filter out empty group results, in case the user included groups in their regex.
+          filter(m => m != null),
           toArray,
         ) as string[];
 
@@ -169,6 +180,8 @@ function createSearchScoreMapper<T>(
             acc.highlights[last.name] = pipe(
               matches,
               map(m => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' })),
+              // Filter out empty group results, in case the user included groups in their regex.
+              filter(m => m.match != null),
               uniq(m => m.match),
               map(m => {
                 const leftPadding = m.input.slice(Math.max(0, m.index - maxHighlightPadding), m.index);
@@ -206,7 +219,7 @@ export class SearchEngine<T extends object> {
 
   public search<Keys extends ODataSelect<T>>(request: SearchDocumentsRequest<T, Keys>): SearchDocumentsPageResult<ODataSelectResult<T, Keys>> {
     const filterCommand = request.filter && Parsers.filter.parse(request.filter) || undefined;
-    const orderByCommand = request.orderBy && Parsers.orderBy.parse(request.orderBy.join(', ')) || undefined;
+    const orderByCommand = request.orderBy && Parsers.orderBy.parse(request.orderBy) || undefined;
     const selectCommand = request.select && Parsers.select.parse(request.select.join(', ')) || undefined;
     const searchFieldsCommand = request.searchFields && Parsers.search.parse(request.searchFields) || undefined;
     const highlightCommand = request.highlight && Parsers.highlight.parse(request.highlight) || undefined;
