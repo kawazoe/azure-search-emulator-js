@@ -65,13 +65,13 @@ export interface OParser<TAst> {
   originalQuoteName: (id_str: string) => string;
 }
 
-export interface Parser<TAst> extends OParser<TAst> {
+export interface YaccLexParser<TAst> extends OParser<TAst> {
   yy: {};
   Parser: OParser<TAst>
 }
 
 export interface JisonParser<TAst> {
   parser: OParser<TAst>;
-  Parser: Parser<TAst>;
+  Parser: YaccLexParser<TAst>;
   parse: ParseFunction<TAst>;
 }
