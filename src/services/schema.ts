@@ -293,9 +293,12 @@ function validateComplexProp(fields: FieldDefinition[], value: Record<string, un
     throw new SchemaError(`has more properties than expected`, extraKeys);
   }
 
-  const invalidProps = props.reduce(
-    (acc: ([] | [FieldDefinition[], string])[], cur: FieldDefinition) =>
-      [...acc, ...validateSingleProp(cur, value[cur.name])],
+  const invalidProps = props
+    .map(prop => ({ prop, get: value[prop.name] }))
+    .filter(prop => prop.get != null)
+    .reduce(
+    (acc: ([] | [FieldDefinition[], string])[], { prop, get }) =>
+      [...acc, ...validateSingleProp(prop, get)],
     []
   );
 
