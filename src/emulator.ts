@@ -2,15 +2,19 @@ import { _throw } from './lib/_throw';
 import { createHttp404 } from './lib/http';
 import type { ODataSelect, ODataSelectResult } from './lib/odata';
 
-import type { FieldDefinition } from './services/schema';
-import type { FindDocumentRequest, PostDocumentsRequest } from './services/dataStore';
-import { DataStore } from './services/dataStore';
-import type { SearchDocumentsPageResult, SearchDocumentsRequest } from './services/searchEngine';
-import { SearchEngine } from './services/searchEngine';
-import type { SuggestDocumentsResult, Suggester, SuggestRequest } from './services/suggestEngine';
-import { SuggestEngine } from './services/suggestEngine';
-import type { AutoCompleteRequest, AutoCompleteDocumentResult } from './services/autocompleteEngine';
-import { AutocompleteEngine } from './services/autocompleteEngine';
+import type {
+  FindDocumentRequest,
+  PostDocumentsRequest,
+  SearchDocumentsPageResult,
+  SearchDocumentsRequest,
+  SuggestDocumentsResult,
+  Suggester,
+  SuggestRequest,
+  AutoCompleteRequest,
+  AutoCompleteDocumentResult,
+  Schema
+} from './services';
+import { DataStore, SearchEngine, SuggestEngine, AutocompleteEngine } from './services';
 
 export class Index<T extends object> {
   public static createIndex<T extends object>(

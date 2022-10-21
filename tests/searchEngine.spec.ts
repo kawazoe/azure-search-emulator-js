@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { SearchDocumentMeta, SearchEngine } from '../src/services/searchEngine';
-import { flatPeopleSchema, People } from './lib/mockSchema';
+
+import type { People } from './lib/mockSchema';
+import { flatPeopleSchema } from './lib/mockSchema';
+
+import type { SearchDocumentMeta } from '../src';
+import { SearchEngine } from '../src';
 
 function createEmpty() {
   return new SearchEngine(() => flatPeopleSchema, () => []);

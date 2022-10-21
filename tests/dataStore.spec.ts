@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DataStore } from '../src/services/dataStore';
-import { FieldDefinition } from '../src/services/schema';
-import { People, peopleSchema } from './lib/mockSchema';
+
+import type { FieldDefinition } from '../src';
+import { DataStore } from '../src';
+
+import type { People } from './lib/mockSchema';
+import { peopleSchema } from './lib/mockSchema';
 
 describe('DataStore', () => {
   describe('validation', () => {

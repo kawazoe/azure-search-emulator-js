@@ -1,4 +1,4 @@
-import { FieldDefinition, FlatSchema, KeyFieldDefinition, Schema } from '../../src/services/schema';
+import { FieldDefinition, FlatSchema, KeyFieldDefinition, Schema } from '../../src';
 
 export type People = {
   id: string,

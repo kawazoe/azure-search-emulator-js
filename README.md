@@ -114,7 +114,9 @@ matching. This means that any query using the Lucene syntax, or features meant t
 full query types) is not supported. This also means that suggesters, analysers and skillsets are not supported or
 extremely limited.
 
-IT does not support synonyms.
+It does not support scoring profiles.
+
+It does not support synonyms.
 
 It does not support sharding, meaning that index coverage will always be 100%.
 
@@ -144,6 +146,7 @@ Azure Search javascript client library. This is now one less service to spin up 
 demoing, your application.
 
 ## What's next
+- Scoring profiles.
 - Some big refactoring to extract a search backend from the query engines.
 - Support storing/loading the index to/from disk when running on the server.
 - Switch the backend to a full text search engine with Lucene syntax.

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { SearchEngine } from '../src/services/searchEngine';
-import { flatPeopleSchema, People, peopleSchemaKey } from './lib/mockSchema';
-import { SuggestEngine, Suggester } from '../src/services/suggestEngine';
+
 import { _throw } from '../src/lib/_throw';
+
+import type { People } from './lib/mockSchema';
+import { flatPeopleSchema, peopleSchemaKey } from './lib/mockSchema';
+
+import type { Suggester } from '../src';
+import { SearchEngine, SuggestEngine } from '../src';
 
 const suggesters: Record<string, Suggester> = {
   people: {

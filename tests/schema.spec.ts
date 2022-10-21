@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FieldDefinition, validateSchema } from '../src/services/schema';
-import { People, peopleSchema } from './lib/mockSchema';
+
+import type { People } from './lib/mockSchema';
+import { peopleSchema } from './lib/mockSchema';
+
+import type { FieldDefinition } from '../src';
+import { validateSchema } from '../src';
 
 describe('Schema', () => {
   describe('validateSchema', () => {
