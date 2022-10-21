@@ -19,8 +19,8 @@ import { DataStore, SearchEngine, SuggestEngine, AutocompleteEngine } from './se
 export class Index<T extends object> {
   public static createIndex<T extends object>(
     name: string,
-    schema: FieldDefinition[],
-    suggesters: Record<string, Suggester>,
+    schema: Schema,
+    suggesters: Suggester[],
   ) {
 
     const dataStore = DataStore.createDataStore<T>(schema);
@@ -28,7 +28,7 @@ export class Index<T extends object> {
       () => dataStore.flatSchema,
       () => dataStore.documents
     );
-    const suggesterProvider = (name: string) => suggesters[name] ?? _throw(new Error(`Unknown suggester ${name}`));
+    const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
     const suggestEngine = new SuggestEngine<T>(
       searchEngine,
       () => dataStore.keyField,
@@ -105,7 +105,7 @@ export class Emulator {
   /**
    * https://learn.microsoft.com/en-us/rest/api/searchservice/create-index
    */
-  public createIndex(name: string, schema: FieldDefinition[], suggesters: Record<string, Suggester>) {
+  public createIndex(name: string, schema: Schema, suggesters: Suggester[]) {
     this.indices.push(Index.createIndex(name, schema, suggesters));
   }
 

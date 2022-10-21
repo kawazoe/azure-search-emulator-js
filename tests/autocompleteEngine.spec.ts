@@ -8,15 +8,17 @@ import { flatPeopleSchema } from './lib/mockSchema';
 import type { Suggester } from '../src';
 import { SearchEngine, AutocompleteEngine } from '../src';
 
-const suggesters: Record<string, Suggester> = {
-  people: {
+const suggesters: Suggester[] = [
+  {
+    name: 'sg',
+    searchMode: 'analyzingInfixMatching',
     fields: flatPeopleSchema
       .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
       .map(([k]) => k)
-      .join(', ')
   }
-}
-const suggesterProvider = (name: string) => suggesters[name] ?? _throw(new Error(`Unknown suggester ${name}`));
+];
+
+const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
 
 function createEmpty() {
   return new AutocompleteEngine(
@@ -68,7 +70,7 @@ describe('AutocompleteEngine', () => {
     it('should return nothing when empty', () => {
       const sut = createEmpty();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '.*' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '.*' });
 
       expect(results.value).toEqual([]);
     });
@@ -76,7 +78,7 @@ describe('AutocompleteEngine', () => {
     it('should return matching search as regex', () => {
       const sut = createBasic();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: 'b[ai]' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: 'b[ai]' });
 
       expect(results.value).toEqual([
         { text: 'bar', queryPlusText: 'bar' },
@@ -87,7 +89,7 @@ describe('AutocompleteEngine', () => {
     it('should complete only the first word in oneTerm mode', () => {
       const sut = createLongData();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: 'long' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: 'long' });
 
       expect(results.value).toEqual([
         { text: 'long', queryPlusText: 'long' },
@@ -98,7 +100,7 @@ describe('AutocompleteEngine', () => {
     it('should complete up to two words in twoTerm mode', () => {
       const sut = createLongData();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '(very|a) long', autocompleteMode: 'twoTerms' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '(very|a) long', autocompleteMode: 'twoTerms' });
 
       expect(results.value).toEqual([
         { text: 'long \t name', queryPlusText: 'very long \t name' },
@@ -109,7 +111,7 @@ describe('AutocompleteEngine', () => {
     it('should include the whole query in results', () => {
       const sut = createLongData();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '(very|a) lon' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '(very|a) lon' });
 
       expect(results.value).toEqual([
         { text: 'long', queryPlusText: 'very long' },
@@ -122,7 +124,7 @@ describe('AutocompleteEngine', () => {
     it('should only search in searchFields', () => {
       const sut = createBasic();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '1|b', searchFields: 'id' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '1|b', searchFields: 'id' });
 
       expect(results.value).toEqual([
         { text: '1', queryPlusText: '1' },
@@ -132,7 +134,7 @@ describe('AutocompleteEngine', () => {
     it('should search in all provided searchFields', () => {
       const sut = createBasic();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '1|b', searchFields: 'id, fullName' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '1|b', searchFields: 'id, fullName' });
 
       expect(results.value).toEqual([
         { text: '1', queryPlusText: '1' },
@@ -147,7 +149,7 @@ describe('AutocompleteEngine', () => {
     it('should limit results to 5 items per page by default', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '[13579]' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '[13579]' });
 
       expect(results.value.length).toBe(5);
     });
@@ -155,7 +157,7 @@ describe('AutocompleteEngine', () => {
     it('should limit results to 100 items per page max', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '[13579]', top: Number.MAX_SAFE_INTEGER });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '[13579]', top: Number.MAX_SAFE_INTEGER });
 
       expect(results.value.length).toBe(100);
     });
@@ -165,7 +167,7 @@ describe('AutocompleteEngine', () => {
     it('should not include coverage by default', () => {
       const sut = createEmpty();
 
-      const results = sut.autocomplete({ suggesterName: 'people', search: '.*' });
+      const results = sut.autocomplete({ suggesterName: 'sg', search: '.*' });
 
       expect(results['@search.coverage']).toBe(undefined);
     });
@@ -173,7 +175,7 @@ describe('AutocompleteEngine', () => {
     it('should include coverage when minimum is requested', () => {
       const sut = createEmpty();
 
-      const results = sut.autocomplete({  suggesterName: 'people', search: '.*', minimumCoverage: 75 });
+      const results = sut.autocomplete({  suggesterName: 'sg', search: '.*', minimumCoverage: 75 });
 
       // Coverage is hard-coded to 100% in the emulator since the data isn't sharded.
       expect(results['@search.coverage']).toBe(100);

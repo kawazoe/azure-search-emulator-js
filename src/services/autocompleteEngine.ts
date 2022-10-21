@@ -88,7 +88,7 @@ export class AutocompleteEngine<T extends object> {
 
     const searchResults = this.searchEngine.search({
       filter: request.filter,
-      highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields,
+      highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
       highlightPreTag: internalPreTag,
       highlightPostTag: internalPostTag,
       minimumCoverage: request.minimumCoverage ?? 80,

@@ -29,9 +29,11 @@ export interface SuggestDocumentsResult<T extends object> {
   value: SuggestResult<T>[];
 }
 
-export type Suggester = {
-  fields: string;
-};
+export interface Suggester {
+  name: string;
+  searchMode: 'analyzingInfixMatching';
+  fields: string[];
+}
 
 const defaultPageSize = 5;
 const maxPageSize = 100;
@@ -49,7 +51,7 @@ export class SuggestEngine<T extends object> {
 
     const searchResults = this.searchEngine.search({
       filter: request.filter,
-      highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields,
+      highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
       highlightPreTag: request.highlightPreTag ?? '',
       highlightPostTag: request.highlightPostTag ?? '',
       minimumCoverage: request.minimumCoverage ?? 80,

@@ -8,15 +8,17 @@ import { flatPeopleSchema, peopleSchemaKey } from './lib/mockSchema';
 import type { Suggester } from '../src';
 import { SearchEngine, SuggestEngine } from '../src';
 
-const suggesters: Record<string, Suggester> = {
-  people: {
+const suggesters: Suggester[] = [
+  {
+    name: 'sg',
+    searchMode: 'analyzingInfixMatching',
     fields: flatPeopleSchema
       .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
       .map(([k]) => k)
-      .join(', ')
   }
-}
-const suggesterProvider = (name: string) => suggesters[name] ?? _throw(new Error(`Unknown suggester ${name}`));
+];
+
+const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
 
 function createEmpty() {
   return new SuggestEngine(
@@ -92,7 +94,7 @@ describe('SuggestEngine', () => {
     it('should return nothing when empty', () => {
       const sut = createEmpty();
 
-      const results = sut.suggest({ suggesterName: 'people', search: '.*' });
+      const results = sut.suggest({ suggesterName: 'sg', search: '.*' });
 
       expect(results.value).toEqual([]);
     });
@@ -100,7 +102,7 @@ describe('SuggestEngine', () => {
     it('should return matching search as regex', () => {
       const sut = createBasic();
 
-      const results = sut.suggest({ suggesterName: 'people', search: 'b[ai]' });
+      const results = sut.suggest({ suggesterName: 'sg', search: 'b[ai]' });
 
       expect(results.value).toEqual([
         { '@search.text': 'bar', id: '2' },
@@ -113,7 +115,7 @@ describe('SuggestEngine', () => {
     it('should only search in searchFields', () => {
       const sut = createBasic();
 
-      const results = sut.suggest({ suggesterName: 'people', search: '1|b', searchFields: 'id' });
+      const results = sut.suggest({ suggesterName: 'sg', search: '1|b', searchFields: 'id' });
 
       expect(results.value).toEqual([
         { '@search.text': '1', id: '1' },
@@ -123,7 +125,7 @@ describe('SuggestEngine', () => {
     it('should search in all provided searchFields', () => {
       const sut = createBasic();
 
-      const results = sut.suggest({ suggesterName: 'people', search: '1|b', searchFields: 'id, fullName' });
+      const results = sut.suggest({ suggesterName: 'sg', search: '1|b', searchFields: 'id, fullName' });
 
       expect(results.value).toEqual([
         { '@search.text': '1', id: '1' },
@@ -138,7 +140,7 @@ describe('SuggestEngine', () => {
     it('should include only the key field by default', () => {
       const sut = createComplex();
 
-      const results = sut.suggest({ suggesterName: 'people', search: 'adr1' });
+      const results = sut.suggest({ suggesterName: 'sg', search: 'adr1' });
 
       expect(results.value).toEqual([{
         '@search.text': 'adr1',
@@ -149,7 +151,7 @@ describe('SuggestEngine', () => {
     it('should include all properties on wildcard', () => {
       const sut = createComplex();
 
-      const results = sut.suggest({ suggesterName: 'people', search: 'adr1', select: ['*'] });
+      const results = sut.suggest({ suggesterName: 'sg', search: 'adr1', select: ['*'] });
 
       expect(results.value).toEqual([{
         '@search.text': 'adr1',
@@ -180,7 +182,7 @@ describe('SuggestEngine', () => {
     it('should only include requested properties', () => {
       const sut = createComplex();
 
-      const results = sut.suggest({ suggesterName: 'people', search: 'adr1', select: ['id', 'addresses/kind', 'phones', 'metadata/deleted'] });
+      const results = sut.suggest({ suggesterName: 'sg', search: 'adr1', select: ['id', 'addresses/kind', 'phones', 'metadata/deleted'] });
 
       expect(results.value).toEqual([{
         '@search.text': 'adr1',
@@ -201,7 +203,7 @@ describe('SuggestEngine', () => {
     it('should limit results to 5 items per page by default', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.suggest({ suggesterName: 'people', search: '[13579]' });
+      const results = sut.suggest({ suggesterName: 'sg', search: '[13579]' });
 
       expect(results.value.length).toBe(5);
     });
@@ -209,7 +211,7 @@ describe('SuggestEngine', () => {
     it('should limit results to 100 items per page max', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.suggest({ suggesterName: 'people', search: '[13579]', top: Number.MAX_SAFE_INTEGER });
+      const results = sut.suggest({ suggesterName: 'sg', search: '[13579]', top: Number.MAX_SAFE_INTEGER });
 
       expect(results.value.length).toBe(100);
     });
@@ -219,7 +221,7 @@ describe('SuggestEngine', () => {
     it('should not include coverage by default', () => {
       const sut = createEmpty();
 
-      const results = sut.suggest({ suggesterName: 'people', search: '.*' });
+      const results = sut.suggest({ suggesterName: 'sg', search: '.*' });
 
       expect(results['@search.coverage']).toBe(undefined);
     });
@@ -227,7 +229,7 @@ describe('SuggestEngine', () => {
     it('should include coverage when minimum is requested', () => {
       const sut = createEmpty();
 
-      const results = sut.suggest({  suggesterName: 'people', search: '.*', minimumCoverage: 75 });
+      const results = sut.suggest({  suggesterName: 'sg', search: '.*', minimumCoverage: 75 });
 
       // Coverage is hard-coded to 100% in the emulator since the data isn't sharded.
       expect(results['@search.coverage']).toBe(100);
