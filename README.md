@@ -3,7 +3,7 @@ An unofficial javascript emulator for the
 [Microsoft Azure Cognitive Search](https://azure.microsoft.com/en-us/products/cognitive-services/#overview) API.
 
 This emulator aims to provide a fast search engine, completely written in javascript, that can run in your browser or
-on the server, while matching the Microsoft Azure Cognitive Search API as close as possible.
+on the server, while matching the Microsoft Azure Cognitive Search API as closely as possible.
 
 ## Installation
 NPM: `npm i azure-search-emulator-js`
@@ -11,35 +11,51 @@ NPM: `npm i azure-search-emulator-js`
 ## Usage
 Import the emulator, create an index, and start to make queries. You can look at the following example, and refer
 yourself to the tests and the [official API documentation](https://learn.microsoft.com/en-us/rest/api/searchservice/)
-for more. 
+for more.
 
 ```typescript
 import { Emulator, Schema, Suggester } from 'azure-search-emulator-js';
 
+type People = {
+  id: string,
+  fullName: string,
+  phones: string[],
+  addresses: {
+    parts: string,
+    city: string,
+    state: string,
+    country: string,
+    kind: 'home' | 'work',
+    order: number,
+  }[],
+}
 const peopleSchema: Schema = [
   { type: 'Edm.String', key: true, name: 'id', facetable: false },
   { type: 'Edm.String', name: 'fullName', facetable: false },
   { type: 'Collection(Edm.String)', name: 'phones', facetable: false },
-  { type: 'Collection(Edm.ComplexType)', name: 'addresses', fields: [
+  {
+    type: 'Collection(Edm.ComplexType)', name: 'addresses', fields: [
       { type: 'Edm.String', name: 'parts', facetable: false },
       { type: 'Edm.String', name: 'city' },
       { type: 'Edm.String', name: 'state' },
       { type: 'Edm.String', name: 'country' },
       { type: 'Edm.String', name: 'kind' },
       { type: 'Edm.Int32', name: 'order', facetable: false },
-    ]},
-  { type: 'Collection(Edm.String)', name: 'phones' },
+    ]
+  },
 ];
-const peopleSuggesters: Record<string, Suggester> = {
-  'broad-location': {
-    fields: 'addresses/city, addresses/state, addresses/country'
-  }
-}
+const peopleSuggesters: Suggester[] = [
+  {
+    name: 'sg',
+    searchMode: 'analyzingInfixMatching',
+    fields: 'addresses/city, addresses/state, addresses/country',
+  },
+]
 
 const emulator = new Emulator();
 emulator.createIndex('people', peopleSchema, peopleSuggesters);
 
-const peopleIndex = emulator.getIndex('people');
+const peopleIndex = emulator.getIndex<People>('people');
 peopleIndex.postDocuments({
   value: [
     {
@@ -123,15 +139,17 @@ It does not support sharding, meaning that index coverage will always be 100%.
 It does not support encryption.
 
 Do not expect search results from this emulator to match actual search results. They should make sense, but will not,
-and probably never will be, the same.
+and probably will never be, the same.
 
 ## What is desperately needed
-Documentation.
-
 While there are a fair amount of tests, coverage is pretty poor, and there is no visual demo.
 
-Currently, the people wanting to use this library are expected to know how to use the Microsoft Azure Cognitive Search
-API. Official documentation at: https://learn.microsoft.com/en-us/rest/api/searchservice/
+This emulator should become a drop in replacement for the real service. Notably, the official javascript search client
+should be able to use any of the supported features of the emulator without crashing. Ideally, there should be an
+integration with http mocking libraries like MirageJs to use an in-browser emulator with the official client.
+
+Documentation. Currently, people wanting to use this library are expected to know how to use the Microsoft Azure
+Cognitive Search API. Official documentation at: https://learn.microsoft.com/en-us/rest/api/searchservice/
 
 ## Why?!
 Azure Cognitive Search is crazy expensive for single developer projects, specially in their early stages, and provides
@@ -146,9 +164,10 @@ Azure Search javascript client library. This is now one less service to spin up 
 demoing, your application.
 
 ## What's next
-- Scoring profiles.
+- Scoring profiles and scoring improvements.
 - Some big refactoring to extract a search backend from the query engines.
+- Major speed optimizations.
+- Support for queries made by the official client.
 - Support storing/loading the index to/from disk when running on the server.
 - Switch the backend to a full text search engine with Lucene syntax.
-- Major speed optimizations.
 - Maybe more features?
