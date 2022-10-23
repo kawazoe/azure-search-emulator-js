@@ -378,7 +378,7 @@ const notFilterableTypes: FieldDefinition['type'][] = ['Edm.ComplexType', 'Colle
 const sortableTypes: FieldDefinition['type'][] = ['Edm.String', 'Edm.Int32', 'Edm.Int64', 'Edm.Double', 'Edm.Boolean', 'Edm.DateTimeOffset', 'Edm.GeographyPoint'];
 const notFacetableTypes: FieldDefinition['type'][] = ['Edm.ComplexType', 'Collection(Edm.ComplexType)', 'Edm.GeographyPoint', 'Collection(Edm.GeographyPoint)'];
 
-function canRequirementMatchField(field: FieldDefinition, require: SchemaMatcherRequirements) {
+function matchRequirementFieldType(field: FieldDefinition, require: SchemaMatcherRequirements) {
   switch (require) {
     case 'searchable':
       return searchableTypes.includes(field.type);
@@ -393,20 +393,50 @@ function canRequirementMatchField(field: FieldDefinition, require: SchemaMatcher
   }
 }
 
-export function matchFieldRequirement(schema: FlatSchema, fieldPath: string, require: SchemaMatcherRequirements): string | null {
-  const field = schema.find(([p]) => fieldPath === p);
-  if (!field) {
-    return `Field '${fieldPath}' not found in schema.`
-  }
-
-  if (!canRequirementMatchField(field[1], require)) {
+function matchFieldRequirement(field: FieldDefinition, require: SchemaMatcherRequirements, fieldPath: string): string | null {
+  if (!matchRequirementFieldType(field, require)) {
     return `Field '${fieldPath}'s type prevent it from being ${require}.`;
   }
 
-  const target = field[1] as any;
-  if (target[require] === false) {
+  if ((field as any)[require] === false) {
     return `Field '${fieldPath}' is not ${require} in schema.`;
   }
 
   return null;
+}
+
+export function matchSchemaRequirement(schema: FlatSchema, fieldPath: string, require: SchemaMatcherRequirements): string | null {
+  const definition = schema.find(([p]) => fieldPath === p);
+  return definition
+    ? matchFieldRequirement(definition[1], require, fieldPath)
+    : `Field '${fieldPath}' not found in schema.`;
+}
+
+export class SchemaService<T extends object> {
+  public static createSchemaService<T extends object>(schema: Schema) {
+    const { keyField, flatSchema, assertSchema } = validateSchema<T>(schema);
+    
+    return new SchemaService(
+      keyField,
+      flatSchema,
+      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'searchable', p) == null),
+      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'filterable', p) == null),
+      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'sortable', p) == null),
+      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'facetable', p) == null),
+      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'retrievable', p) == null),
+      assertSchema,
+    );
+  }
+  
+  constructor(
+    public readonly keyField: KeyFieldDefinition,
+    public readonly fullSchema: FlatSchema,
+    public readonly searchableSchema: FlatSchema,
+    public readonly filtrableSchema: FlatSchema,
+    public readonly sortableSchema: FlatSchema,
+    public readonly facetableSchema: FlatSchema,
+    public readonly retrievableSchema: FlatSchema,
+    public readonly assertSchema: (document: Record<string, unknown>) => T,
+  ) {
+  }
 }

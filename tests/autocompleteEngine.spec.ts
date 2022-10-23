@@ -3,33 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { _throw } from '../src/lib/_throw';
 
 import type { People } from './lib/mockSchema';
-import { flatPeopleSchema } from './lib/mockSchema';
+import { peopleSchemaService, suggesters } from './lib/mockSchema';
 
-import type { Suggester } from '../src';
 import { SearchEngine, AutocompleteEngine } from '../src';
 
-const suggesters: Suggester[] = [
-  {
-    name: 'sg',
-    searchMode: 'analyzingInfixMatching',
-    fields: flatPeopleSchema
-      .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
-      .map(([k]) => k)
-  }
-];
 
 const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
 
 function createEmpty() {
   return new AutocompleteEngine(
-    new SearchEngine(() => flatPeopleSchema, () => []),
+    new SearchEngine(peopleSchemaService, () => []),
     suggesterProvider,
   );
 }
 function createBasic() {
   return new AutocompleteEngine(
     new SearchEngine<People>(
-      () => flatPeopleSchema,
+      peopleSchemaService,
       () => [
         { id: '1', fullName: 'foo' },
         { id: '2', fullName: 'bar' },
@@ -43,7 +33,7 @@ function createBasic() {
 function createLongData() {
   return new AutocompleteEngine(
     new SearchEngine<People>(
-      () => flatPeopleSchema,
+      peopleSchemaService,
       () => [
         { id: '1', fullName: 'some \t very long \t name' },
         { id: '2', fullName: 'a value' },
@@ -58,7 +48,7 @@ function createLargeDataSet() {
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
   return new AutocompleteEngine<People>(
     new SearchEngine<People>(
-      () => flatPeopleSchema,
+      peopleSchemaService,
       () => documents
     ),
     suggesterProvider,

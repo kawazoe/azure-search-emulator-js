@@ -3,26 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { _throw } from '../src/lib/_throw';
 
 import type { People } from './lib/mockSchema';
-import { flatPeopleSchema, peopleSchemaKey } from './lib/mockSchema';
+import { peopleSchemaKey, peopleSchemaService, suggesters } from './lib/mockSchema';
 
-import type { Suggester } from '../src';
 import { SearchEngine, SuggestEngine } from '../src';
-
-const suggesters: Suggester[] = [
-  {
-    name: 'sg',
-    searchMode: 'analyzingInfixMatching',
-    fields: flatPeopleSchema
-      .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
-      .map(([k]) => k)
-  }
-];
 
 const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
 
 function createEmpty() {
   return new SuggestEngine(
-    new SearchEngine(() => flatPeopleSchema, () => []),
+    new SearchEngine(peopleSchemaService, () => []),
     () => peopleSchemaKey,
     suggesterProvider,
   );
@@ -30,7 +19,7 @@ function createEmpty() {
 function createBasic() {
   return new SuggestEngine(
     new SearchEngine<People>(
-      () => flatPeopleSchema,
+      peopleSchemaService,
       () => [
         { id: '1', fullName: 'foo' },
         { id: '2', fullName: 'bar' },
@@ -69,7 +58,7 @@ function createComplex() {
 
   return new SuggestEngine<People>(
     new SearchEngine<People>(
-    () => flatPeopleSchema,
+      peopleSchemaService,
     () => [document],
     ),
     () => peopleSchemaKey,
@@ -81,7 +70,7 @@ function createLargeDataSet() {
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
   return new SuggestEngine<People>(
     new SearchEngine<People>(
-      () => flatPeopleSchema,
+      peopleSchemaService,
       () => documents
     ),
     () => peopleSchemaKey,

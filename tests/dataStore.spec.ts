@@ -1,38 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import type { FieldDefinition } from '../src';
 import { DataStore } from '../src';
 
 import type { People } from './lib/mockSchema';
-import { peopleSchema } from './lib/mockSchema';
+import { peopleSchemaService } from './lib/mockSchema';
 
 describe('DataStore', () => {
-  describe('validation', () => {
-    it('should fail if no key is provided', () => {
-      expect(() => DataStore.createDataStore([])).toThrowError(/KeyFieldDefinition/);
-    });
-
-    it('should create', () => {
-      const schema: FieldDefinition[] = [
-        { type: 'Edm.String', key: true, name: 'foo' }
-      ];
-      const sut = DataStore.createDataStore(schema);
-
-      expect(sut).toBeInstanceOf(DataStore);
-      expect(sut.schema).toBe(schema);
-      expect(sut.keyField.type).toBe('Edm.String');
-      expect(sut.keyField.key).toBe(true);
-      expect(sut.keyField.name).toBe('foo');
-      expect(sut.flatSchema).toHaveLength(1);
-
-      expect(sut.documents).toEqual([]);
-    });
-  });
-
   describe('postDocuments', () => {
     describe('upload', () => {
       it('should add the document with new key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original' }],
@@ -42,7 +19,7 @@ describe('DataStore', () => {
       })
 
       it('should replace the document with a reused key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original' }],
@@ -55,7 +32,7 @@ describe('DataStore', () => {
       });
 
       it('should replace the document when batched with a reused key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [
@@ -70,7 +47,7 @@ describe('DataStore', () => {
 
     describe('merge', () => {
       it('should fail with new key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         const action = () => sut.postDocuments({
           value: [{ '@search.action': 'merge', id: 'abc', fullName: 'original' }],
@@ -80,7 +57,7 @@ describe('DataStore', () => {
       })
 
       it('should merge fields with a reused key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original', income: 500 }],
@@ -93,7 +70,7 @@ describe('DataStore', () => {
       });
 
       it('should replace the document when batched with a reused key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [
@@ -108,7 +85,7 @@ describe('DataStore', () => {
 
     describe('mergeOrUpload', () => {
       it('should add the document with new key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [{ '@search.action': 'mergerOrUpload', id: 'abc', fullName: 'original' }],
@@ -118,7 +95,7 @@ describe('DataStore', () => {
       })
 
       it('should merge fields with a reused key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original', income: 500 }],
@@ -131,7 +108,7 @@ describe('DataStore', () => {
       });
 
       it('should replace the document when batched with a reused key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [
@@ -146,7 +123,7 @@ describe('DataStore', () => {
 
     describe('delete', () => {
       it('should fail with new key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'keep' }],
@@ -159,7 +136,7 @@ describe('DataStore', () => {
       });
 
       it('should remove the document with an existing key', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [
@@ -175,7 +152,7 @@ describe('DataStore', () => {
       });
 
       it('should remove the document with an existing key when batched', () => {
-        const sut = DataStore.createDataStore<People>(peopleSchema);
+        const sut = new DataStore<People>(peopleSchemaService);
 
         sut.postDocuments({
           value: [
@@ -191,7 +168,7 @@ describe('DataStore', () => {
   });
 
   it('countDocuments', () => {
-    const sut = DataStore.createDataStore<People>(peopleSchema);
+    const sut = new DataStore<People>(peopleSchemaService);
 
     sut.postDocuments({
       value: [
@@ -207,7 +184,7 @@ describe('DataStore', () => {
 
   describe('findDocument', () => {
     it('should fail if the document is missing', () => {
-      const sut = DataStore.createDataStore<People>(peopleSchema);
+      const sut = new DataStore<People>(peopleSchemaService);
 
       const action = () => sut.findDocument({ key: 'missing' });
 
@@ -215,7 +192,7 @@ describe('DataStore', () => {
     });
 
     it('should return the document when matched', () => {
-      const sut = DataStore.createDataStore<People>(peopleSchema);
+      const sut = new DataStore<People>(peopleSchemaService);
 
       sut.postDocuments({
         value: [{ '@search.action': 'upload', id: 'a', fullName: 'test', ratio: 0.5 }],
@@ -227,7 +204,7 @@ describe('DataStore', () => {
     });
 
     it('should apply the select query', () => {
-      const sut = DataStore.createDataStore<People>(peopleSchema);
+      const sut = new DataStore<People>(peopleSchemaService);
 
       sut.postDocuments({
         value: [{ '@search.action': 'upload', id: 'a', fullName: 'test', ratio: 0.5 }],

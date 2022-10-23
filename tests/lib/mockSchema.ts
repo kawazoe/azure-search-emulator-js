@@ -1,4 +1,4 @@
-import { FieldDefinition, FlatSchema, KeyFieldDefinition, Schema } from '../../src';
+import { KeyFieldDefinition, Schema, SchemaService, Suggester } from '../../src';
 
 export type People = {
   id: string,
@@ -36,26 +36,14 @@ export const peopleSchema: Schema = [
     ]},
 ];
 
-const parts: FieldDefinition = { type: 'Edm.String', name: 'parts' };
-const kind: FieldDefinition = { type: 'Edm.String', name: 'kind' };
+export const peopleSchemaService = SchemaService.createSchemaService<People>(peopleSchema);
 
-const createdBy: FieldDefinition = { type: 'Edm.String', name: 'createdBy' };
-const createdOn: FieldDefinition = { type: 'Edm.DateTimeOffset', name: 'createdOn' };
-const editCounter: FieldDefinition = { type: 'Edm.Int32', name: 'editCounter' };
-const deleted: FieldDefinition = { type: 'Edm.Boolean', name: 'deleted' };
-
-export const flatPeopleSchema: FlatSchema = [
-  ['id', { type: 'Edm.String', key: true, name: 'id' }],
-  ['fullName', { type: 'Edm.String', name: 'fullName' }],
-  ['addresses', { type: 'Collection(Edm.ComplexType)', name: 'addresses', fields: [parts, kind] }],
-  ['addresses/parts', parts],
-  ['addresses/kind', kind],
-  ['phones', { type: 'Collection(Edm.String)', name: 'phones' }],
-  ['ratio', { type: 'Edm.Double', name: 'ratio' }],
-  ['income', { type: 'Edm.Int64', name: 'income' }],
-  ['metadata', { type: 'Edm.ComplexType', name: 'metadata', fields: [createdBy, createdOn, editCounter, deleted] }],
-  ['metadata/createdBy', createdBy],
-  ['metadata/createdOn', createdOn],
-  ['metadata/editCounter', editCounter],
-  ['metadata/deleted', deleted],
+export const suggesters: Suggester[] = [
+  {
+    name: 'sg',
+    searchMode: 'analyzingInfixMatching',
+    fields: peopleSchemaService.fullSchema
+      .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
+      .map(([k]) => k)
+  }
 ];

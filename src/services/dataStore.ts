@@ -4,8 +4,7 @@ import { createHttp404 } from '../lib/http';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import { select } from '../parsers';
-import type { FlatSchema, KeyFieldDefinition, Schema } from './schema';
-import {  validateSchema } from './schema';
+import { SchemaService } from './schema';
 
 export interface FindDocumentRequest<T extends object, Keys extends ODataSelect<T>> {
   key: string;
@@ -20,26 +19,10 @@ export interface PostDocumentsRequest<TDoc> {
 
 export class DataStore<T extends object> {
   public readonly documents: T[] = [];
-  public readonly keySelector = (doc: T) => (doc as Record<string, unknown>)[this.keyField.name] as string;
-
-  public static createDataStore<T extends object>(
-    schema: Schema,
-  ) {
-    const { keyField, flatSchema, assertSchema } = validateSchema<T>(schema);
-
-    return new DataStore<T>(
-      schema,
-      flatSchema,
-      keyField,
-      assertSchema,
-    );
-  }
+  public readonly keySelector = (doc: T) => (doc as Record<string, unknown>)[this.schema.keyField.name] as string;
 
   constructor(
-    public readonly schema: Schema,
-    public readonly flatSchema: FlatSchema,
-    public readonly keyField: KeyFieldDefinition,
-    private readonly assertSchema: (document: Record<string, unknown>) => T,
+    public readonly schema: SchemaService<T>,
   ) {
   }
 
@@ -59,7 +42,7 @@ export class DataStore<T extends object> {
 
   public postDocuments(documents: PostDocumentsRequest<T>) {
     for (const { '@search.action': action, ...request } of documents.value) {
-      const document = this.assertSchema(request);
+      const document = this.schema.assertSchema(request);
 
       switch (action) {
         case 'upload':

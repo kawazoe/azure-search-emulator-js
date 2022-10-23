@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import type { People } from './lib/mockSchema';
-import { flatPeopleSchema } from './lib/mockSchema';
+import { peopleSchemaService } from './lib/mockSchema';
 
 import type { SearchDocumentMeta } from '../src';
 import { SearchEngine } from '../src';
 
 function createEmpty() {
-  return new SearchEngine(() => flatPeopleSchema, () => []);
+  return new SearchEngine(peopleSchemaService, () => []);
 }
 function createBasic() {
   return new SearchEngine<People>(
-    () => flatPeopleSchema,
+    peopleSchemaService,
     () => [
       { id: '1', fullName: 'foo' },
       { id: '2', fullName: 'bar' },
@@ -46,13 +46,13 @@ function createComplex() {
   };
 
   return new SearchEngine<People>(
-    () => flatPeopleSchema,
+    peopleSchemaService,
     () => [document],
   );
 }
 function createFacetable() {
   return new SearchEngine<People>(
-    () => flatPeopleSchema,
+    peopleSchemaService,
     () => [
       { id: '1', fullName: 'foo', income: 400, addresses: [{ parts: 'adr1', kind: 'home' }] },
       { id: '2', fullName: 'bar', income: 700, addresses: [{ parts: 'adr2', kind: 'home' }] },
@@ -65,7 +65,7 @@ function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
   return new SearchEngine<People>(
-    () => flatPeopleSchema,
+    peopleSchemaService,
     () => documents
   );
 }

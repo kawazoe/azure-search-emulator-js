@@ -16,7 +16,7 @@ import type {
   FacetResults,
   FacetActions
 } from './asts';
-import { FlatSchema, matchFieldRequirement, SchemaMatcherRequirements } from '../services/schema';
+import { FlatSchema, matchSchemaRequirement, SchemaMatcherRequirements } from '../services';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
@@ -41,7 +41,7 @@ function compare<T>(left: T, right: T): -1 | 0 | 1 {
 }
 
 function matchSchema(schema: FlatSchema, require: SchemaMatcherRequirements, fieldPath: string[]): [] | [string] {
-  const result = matchFieldRequirement(schema, fieldPath.join('/'), require);
+  const result = matchSchemaRequirement(schema, fieldPath.join('/'), require);
   return result ? [result] : [];
 }
 
@@ -239,7 +239,7 @@ export const facet: FacetParser = {
     const fieldPath = field.split('/');
 
     function canApply(schema: FlatSchema) {
-      const result = matchFieldRequirement(schema, field, 'facetable');
+      const result = matchSchemaRequirement(schema, field, 'facetable');
       return result ? [result] : [];
     }
 

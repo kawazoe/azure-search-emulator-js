@@ -19,7 +19,7 @@ import { toODataQuery } from '../lib/odata';
 
 import * as Parsers from '../parsers';
 import type { FieldDefinition, FlatSchema } from './schema';
-import { SchemaError } from './schema';
+import { SchemaError, SchemaService } from './schema';
 
 export interface SearchDocumentsRequest<T extends object, Keys extends ODataSelect<T> | string> {
   count?: boolean;
@@ -86,20 +86,11 @@ function toPaths(ast: Parsers.SelectAst) {
     );
 }
 
-function isFieldSearchable(searchFields: Parsers.SelectAst): (field: [string, FieldDefinition]) => boolean {
-  const searchFieldPaths = toPaths(searchFields);
-
-  const searchableTypes = ['Edm.String', 'Collection(Edm.String)'];
-  return ([path, last]) => {
-    const isFieldSearchable = (last as { searchable?: boolean }).searchable ?? true;
-    const searchable = isFieldSearchable && searchableTypes.includes(last.type);
-
-    if (searchable && searchFieldPaths.length) {
-      return searchFieldPaths.includes(path);
-    }
-
-    return searchable;
-  };
+function filterSearchableFields(searchables: FlatSchema, searchFields: Parsers.SelectAst): FlatSchema {
+  const paths = toPaths(searchFields);
+  return paths.length > 0
+    ? searchables.filter(([p]) => paths.includes(p))
+    : searchables;
 }
 
 function defaultFilterScoreMapper() {
@@ -212,7 +203,7 @@ function createSearchScoreMapper<T>(
 
 export class SearchEngine<T extends object> {
   constructor(
-    private readonly flatSchemaProvider: () => FlatSchema,
+    private readonly schemaService: SchemaService<T>,
     private readonly documentsProvider: () => T[],
   ) {
   }
@@ -223,15 +214,15 @@ export class SearchEngine<T extends object> {
     const selectCommand = request.select && Parsers.select.parse(request.select.join(', ')) || undefined;
     const searchFieldsCommand = request.searchFields && Parsers.search.parse(request.searchFields) || undefined;
     const highlightCommand = request.highlight && Parsers.highlight.parse(request.highlight) || undefined;
-    const facetCommand = request.facets && request.facets.map(f => Parsers.facet.parse(f)) || undefined;
+    const facetCommands = request.facets && request.facets.map(f => Parsers.facet.parse(f)) || undefined;
 
     const requirementFailures: string[] = [
-      ...(filterCommand?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(orderByCommand?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(selectCommand?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(searchFieldsCommand?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(highlightCommand?.canApply(this.flatSchemaProvider()) ?? []),
-      ...(pipe(facetCommand ?? [], map(f => f.canApply(this.flatSchemaProvider())), flatten)),
+      ...(filterCommand?.canApply(this.schemaService.filtrableSchema) ?? []),
+      ...(orderByCommand?.canApply(this.schemaService.sortableSchema) ?? []),
+      ...(selectCommand?.canApply(this.schemaService.retrievableSchema) ?? []),
+      ...(searchFieldsCommand?.canApply(this.schemaService.searchableSchema) ?? []),
+      ...(highlightCommand?.canApply(this.schemaService.searchableSchema) ?? []),
+      ...(pipe(facetCommands ?? [], map(f => f.canApply(this.schemaService.facetableSchema)), flatten)),
     ];
 
     if (requirementFailures.length) {
@@ -242,10 +233,14 @@ export class SearchEngine<T extends object> {
       ? createFilterScoreMapper(filterCommand)
       : defaultFilterScoreMapper;
 
+    const appliedSearchableSchema = filterSearchableFields(
+      this.schemaService.searchableSchema,
+      searchFieldsCommand ?? { type: 'WILDCARD' }
+    );
+
     const searchScoreMapper = request.search
       ? createSearchScoreMapper(
-        // TODO: Reverse the algorithm to scan pre-applied documents instead of the schema
-        this.flatSchemaProvider().filter(isFieldSearchable(searchFieldsCommand ?? { type: 'WILDCARD' })),
+        appliedSearchableSchema,
         highlightCommand ?? { type: 'LIST', value: [] },
         request.highlightPostTag ?? '</em>',
         request.highlightPreTag ?? '<em>',
@@ -272,8 +267,8 @@ export class SearchEngine<T extends object> {
           acc: { facets: Parsers.FacetResults, results: [T, SearchDocumentMeta][] },
           {document, metas}: {document: T, metas: SearchDocumentMeta}
         ) => {
-          if (facetCommand) {
-            acc.facets = facetCommand.reduce((a, c) => c.apply(a, document), acc.facets);
+          if (facetCommands) {
+            acc.facets = facetCommands.reduce((a, c) => c.apply(a, document), acc.facets);
           }
           acc.results.push([document, metas]);
           return acc;

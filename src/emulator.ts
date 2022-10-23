@@ -14,7 +14,7 @@ import type {
   AutoCompleteDocumentResult,
   Schema
 } from './services';
-import { DataStore, SearchEngine, SuggestEngine, AutocompleteEngine } from './services';
+import { DataStore, SearchEngine, SuggestEngine, AutocompleteEngine, SchemaService } from './services';
 
 export class Index<T extends object> {
   public static createIndex<T extends object>(
@@ -22,16 +22,17 @@ export class Index<T extends object> {
     schema: Schema,
     suggesters: Suggester[],
   ) {
+    const schemaService = SchemaService.createSchemaService<T>(schema);
 
-    const dataStore = DataStore.createDataStore<T>(schema);
+    const dataStore = new DataStore<T>(schemaService);
     const searchEngine = new SearchEngine<T>(
-      () => dataStore.flatSchema,
+      schemaService,
       () => dataStore.documents
     );
     const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
     const suggestEngine = new SuggestEngine<T>(
       searchEngine,
-      () => dataStore.keyField,
+      () => schemaService.keyField,
       suggesterProvider,
     );
     const autocompleteEngine = new AutocompleteEngine<T>(
