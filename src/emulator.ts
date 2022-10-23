@@ -100,16 +100,18 @@ export class Index<T extends object> {
 }
 
 export class Emulator {
-  private indices: Index<{}>[] = [];
+  private indices: Index<object>[] = [];
 
   /**
    * https://learn.microsoft.com/en-us/rest/api/searchservice/create-index
    */
-  public createIndex(name: string, schema: Schema, suggesters: Suggester[]) {
-    this.indices.push(Index.createIndex(name, schema, suggesters));
+  public createIndex<T extends object>(name: string, schema: Schema, suggesters: Suggester[]) {
+    const index = Index.createIndex<T>(name, schema, suggesters);
+    this.indices.push(index as unknown as Index<object>);
+    return index;
   }
 
-  public getIndex<T extends {}>(name: string): Index<T> {
+  public getIndex<T extends object>(name: string): Index<T> {
     return this.indices.find(v => v.name === name) as unknown as Index<T> ?? _throw(createHttp404());
   }
 }

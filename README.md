@@ -53,9 +53,7 @@ const peopleSuggesters: Suggester[] = [
 ]
 
 const emulator = new Emulator();
-emulator.createIndex('people', peopleSchema, peopleSuggesters);
-
-const peopleIndex = emulator.getIndex<People>('people');
+const peopleIndex = emulator.createIndex<People>('people', peopleSchema, peopleSuggesters);
 peopleIndex.postDocuments({
   value: [
     {
