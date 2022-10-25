@@ -162,7 +162,7 @@ Azure Search javascript client library. This is now one less service to spin up 
 demoing, your application.
 
 ## What's next
-- Scoring profiles and scoring improvements.
+- Scoring profiles.
 - Some big refactoring to extract a search backend from the query engines.
 - Major speed optimizations.
 - Support for queries made by the official client.

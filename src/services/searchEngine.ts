@@ -153,27 +153,24 @@ function createSearchScoreMapper<T>(
         );
         const tokens  = pipe(
           matches,
-          flatten,
-          // Filter out empty group results, in case the user included groups in their regex.
-          filter(m => m != null),
+          // Ignore group results. Only look at the complete match
+          map((m) => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' })),
+          // Ignore empty results
+          filter(m => !!m.match),
           toArray,
-        ) as string[];
+        );
 
         if (tokens.length) {
-          acc.searchScore += sum(tokens.map(t => t.length));
+          acc.searchScore += sum(tokens.map(t => (1 - t.index / t.input.length) * t.match.length));
 
-          const uniqueTokens = pipe(tokens, uniq(), toArray);
+          const uniqueTokens = pipe(tokens, uniq(m => m.match), toArray);
           const valueLength = sum(normalized.map(v => v.length));
-          const matchedLength = sum(tokens.map(h => h.length));
+          const matchedLength = sum(tokens.map(t => t.match.length));
 
           if (highlightsPaths.includes(path)) {
             acc.highlights[`${last.name}@odata.type`] = last.type;
             acc.highlights[last.name] = pipe(
-              matches,
-              map(m => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' })),
-              // Filter out empty group results, in case the user included groups in their regex.
-              filter(m => m.match != null),
-              uniq(m => m.match),
+              uniqueTokens,
               map(m => {
                 const leftPadding = m.input.slice(Math.max(0, m.index - maxHighlightPadding), m.index);
                 const rightPadding = m.input.slice(m.index + m.match.length, m.index + m.match.length + maxHighlightPadding);

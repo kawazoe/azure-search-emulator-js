@@ -212,19 +212,19 @@ describe('SearchEngine', () => {
 
       const results = sut.search({ search: 'ba' });
 
-      // 2 for /ba/ in bar
+      // 2 for /ba/ at index 0 of bar
       expect(results.value[0]['@search.score']).toBe(2);
     });
 
-    it('should produce search score based on token counts', () => {
+    it('should produce search score based on token count and location', () => {
       const sut = createBasic();
 
       const results = sut.search({ search: 'z' });
 
-      // 1 for /z/ in baz
-      expect(results.value[0]['@search.score']).toBe(1);
-      // 2 for /z/ + /z/ in buzz
-      expect(results.value[1]['@search.score']).toBe(2);
+      // 0.333 for /z/ at index 2 of baz
+      expect(results.value[0]['@search.score']).toBeCloseTo(0.333333);
+      // 0.5 for /z/ at index 2 of buzz + 0.25 for /z/ at index 3 of buzz
+      expect(results.value[1]['@search.score']).toBeCloseTo(0.75);
     });
   });
 
