@@ -43,20 +43,15 @@ export function filter<T, S extends T>(predicate: (value: T, index: number) => u
 
 export function reduce<T>(callbackfn: (previousValue: T, currentValue: T, currentIndex: number) => T): (source: Iterable<T>) => T;
 export function reduce<T>(callbackfn: (previousValue: T, currentValue: T, currentIndex: number) => T, initialValue: T): (source: Iterable<T>) => T;
-export function reduce<T, R>(callbackfn: (previousValue: T, currentValue: T, currentIndex: number) => T, initialValue: T, resultSelector: (accumulator: T) => R): (source: Iterable<T>) => R;
 export function reduce<T, U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number) => U, initialValue: U): (source: Iterable<T>) => U;
-export function reduce<T, U, R>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number) => U, initialValue: U, resultSelector: (accumulator: U) => R): (source: Iterable<T>) => R;
-export function reduce<T, U, R = U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number) => U, initialValue: U, resultSelector: (accumulator: U) => R): (source: Iterable<T>) => R;
-export function reduce<T, U, R = U>(
+export function reduce<T, U>(
   ...args:
     [(previousValue: T, currentValue: T, currentIndex: number) => T] |
     [(previousValue: T, currentValue: T, currentIndex: number) => T, T] |
-    [(previousValue: T, currentValue: T, currentIndex: number) => T, T, (accumulator: T) => R] |
-    [(previousValue: U, currentValue: T, currentIndex: number) => U, U] |
-    [(previousValue: U, currentValue: T, currentIndex: number) => U, U, (accumulator: U) => R]
+    [(previousValue: U, currentValue: T, currentIndex: number) => U, U]
 ) {
-  const [callbackfn, initialValue, resultSelector] = args;
-  return function (source: Iterable<T>): T | U | R | undefined {
+  const [callbackfn, initialValue] = args;
+  return function (source: Iterable<T>): T | U | undefined {
     const iterator = source[Symbol.iterator]();
     
     let index = 0;
@@ -78,8 +73,7 @@ export function reduce<T, U, R = U>(
       acc = callbackfn(acc, cur.value, index++);
     }
 
-    // @ts-ignore
-    return resultSelector ? resultSelector(acc) : acc;
+    return acc;
   }
 }
 
@@ -178,10 +172,10 @@ export function sum(source: Iterable<number>): number {
   return acc;
 }
 
-export function any<T>(predicate: (value: T) => boolean): (source: Iterable<T>) => boolean {
+export function any<T>(predicate?: (value: T) => boolean): (source: Iterable<T>) => boolean {
   return function (source: Iterable<T>): boolean {
     for (const value of source) {
-      if (predicate(value)) {
+      if (!predicate || predicate(value)) {
         return true;
       }
     }

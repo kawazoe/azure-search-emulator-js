@@ -29,8 +29,8 @@ describe('Schema', () => {
 
       expect(keyField).toBe(key);
       expect(flatSchema).toEqual([
-        ['foo', key],
-        ['bar', bar],
+        ['foo', ['foo'], key],
+        ['bar', ['bar'], bar],
       ]);
       expect(assertSchema).toBeTypeOf('function');
     });
@@ -44,10 +44,10 @@ describe('Schema', () => {
       const { flatSchema } = validateSchema(schema);
 
       expect(flatSchema).toEqual([
-        ['foo', key],
-        ['bar', bar],
-        ['bar/baz', baz],
-        ['bar/buz', buz],
+        ['foo', ['foo'], key],
+        ['bar', ['bar'], bar],
+        ['bar/baz', ['bar', 'baz'], baz],
+        ['bar/buz', ['bar', 'buz'], buz],
       ]);
     });
 
@@ -60,10 +60,10 @@ describe('Schema', () => {
       const { flatSchema } = validateSchema(schema);
 
       expect(flatSchema).toEqual([
-        ['foo', key],
-        ['bar', bar],
-        ['bar/baz', baz],
-        ['bar/buz', buz],
+        ['foo', ['foo'], key],
+        ['bar', ['bar'], bar],
+        ['bar/baz', ['bar', 'baz'], baz],
+        ['bar/buz', ['bar', 'buz'], buz],
       ]);
     });
   });

@@ -1,4 +1,5 @@
 import { KeyFieldDefinition, Schema, SchemaService, Suggester } from '../../src';
+import { _throw } from '../../src/lib/_throw';
 
 export type People = {
   id: string,
@@ -38,12 +39,13 @@ export const peopleSchema: Schema = [
 
 export const peopleSchemaService = SchemaService.createSchemaService<People>(peopleSchema);
 
-export const suggesters: Suggester[] = [
+const peopleSuggesters: Suggester[] = [
   {
     name: 'sg',
     searchMode: 'analyzingInfixMatching',
     fields: peopleSchemaService.fullSchema
-      .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
-      .map(([k]) => k)
+      .filter(([,,f]) => f.type === 'Edm.String' || f.type === 'Collection(Edm.String)')
+      .map(([n]) => n)
   }
 ];
+export const peopleSuggesterProvider = (name: string) => peopleSuggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));

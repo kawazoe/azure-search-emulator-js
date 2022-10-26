@@ -3,7 +3,8 @@ import { pipe } from '../lib/functions';
 import { filter, flatten, map, sortBy, take, toArray, toIterable, uniq } from '../lib/iterables';
 
 import type { Suggester } from './suggestEngine';
-import { SearchEngine } from './searchEngine';
+import { SearchBackend } from './searchBackend';
+import * as Parsers from '../parsers';
 
 export interface AutoCompleteRequest {
   autocompleteMode?: 'oneTerm' | 'twoTerms' | 'oneTermWithContext';
@@ -78,34 +79,39 @@ const maxPageSize = 100;
 
 export class AutocompleteEngine<T extends object> {
   constructor(
-    private searchEngine: SearchEngine<T>,
+    private backend: SearchBackend<T>,
     private suggesterProvider: (name: string) => Suggester,
   ) {
   }
 
   public autocomplete(request: AutoCompleteRequest): AutoCompleteDocumentResult {
+    const highlight = request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', ');
     const top = request.top && Math.min(request.top, maxPageSize) || defaultPageSize;
 
-    const searchResults = this.searchEngine.search({
-      filter: request.filter,
-      highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
+    const filterCommand = request.filter && Parsers.filter.parse(request.filter) || null;
+    const orderByCommand = Parsers.orderBy.parse('search.score() desc');
+    const searchFieldsCommand = request.searchFields && Parsers.search.parse(request.searchFields) || null;
+    const highlightCommand = highlight && Parsers.highlight.parse(highlight) || null;
+
+    const searchResults = this.backend.search({
+      search: request.search,
       highlightPreTag: internalPreTag,
       highlightPostTag: internalPostTag,
-      minimumCoverage: request.minimumCoverage ?? 80,
-      search: request.search,
-      searchFields: request.searchFields,
-      top,
+      filterCommand,
+      orderByCommand,
+      selectCommand: null,
+      searchFieldsCommand,
+      highlightCommand,
+      facetCommands: null,
     });
-
-    const coverage = (request.minimumCoverage ? { '@search.coverage': searchResults['@search.coverage'] } : {});
 
     const strategy = autocompleteModes[request.autocompleteMode ?? 'oneTerm'](request);
     const results = pipe(
-      searchResults.value,
+      searchResults.values,
       map(({
-             ['@search.highlights']: highlights,
-             ['@search.features']: features
-           }) => pipe(
+        ['@search.highlights']: highlights,
+        ['@search.features']: features
+      }) => pipe(
         toIterable(highlights),
         filter(([k]) => !k.endsWith('@odata.type')),
         sortBy(([k]) => features[k].similarityScore, sortBy.desc),
@@ -121,8 +127,10 @@ export class AutocompleteEngine<T extends object> {
       toArray,
     );
 
+    const coverage = request.minimumCoverage ? 100 : null;
+
     return {
-      ...coverage,
+      ...(coverage == null ? {} : { '@search.coverage': coverage}),
       value: results,
     };
   }

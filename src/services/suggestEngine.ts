@@ -4,7 +4,8 @@ import { pipe } from '../lib/functions';
 import { filter, flatten, map, sortBy, take, toArray, toIterable } from '../lib/iterables';
 
 import type { KeyFieldDefinition } from './schema';
-import { SearchEngine} from './searchEngine';
+import { SearchBackend } from './searchBackend';
+import * as Parsers from '../parsers';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {
   filter?: string;          //< OData Filter expression
@@ -40,31 +41,37 @@ const maxPageSize = 100;
 
 export class SuggestEngine<T extends object> {
   constructor(
-    private searchEngine: SearchEngine<T>,
+    private backend: SearchBackend<T>,
     private keyFieldProvider: () => KeyFieldDefinition,
     private suggesterProvider: (name: string) => Suggester,
   ) {
   }
 
   public suggest<Keys extends ODataSelect<T>>(request: SuggestRequest<T, Keys>): SuggestDocumentsResult<ODataSelectResult<T, Keys>> {
+    const select = request.select ?? [this.keyFieldProvider().name as Keys];
+    const highlight = request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', ');
     const top = request.top && Math.min(request.top, maxPageSize) || defaultPageSize;
 
-    const searchResults = this.searchEngine.search({
-      filter: request.filter,
-      highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
+    const filterCommand = request.filter && Parsers.filter.parse(request.filter) || null;
+    const orderByCommand = Parsers.orderBy.parse(request.orderBy ?? 'search.score() desc');
+    const selectCommand = select && Parsers.select.parse(select.join(', ')) || null;
+    const searchFieldsCommand = request.searchFields && Parsers.search.parse(request.searchFields) || null;
+    const highlightCommand = highlight && Parsers.highlight.parse(highlight) || null;
+
+    const searchResults = this.backend.search({
+      search: request.search,
       highlightPreTag: request.highlightPreTag ?? '',
       highlightPostTag: request.highlightPostTag ?? '',
-      minimumCoverage: request.minimumCoverage ?? 80,
-      orderBy: request.orderBy,
-      search: request.search,
-      searchFields: request.searchFields,
-      select: request.select ?? [this.keyFieldProvider().name as Keys],
-      top,
+      filterCommand,
+      orderByCommand,
+      selectCommand,
+      searchFieldsCommand,
+      highlightCommand,
+      facetCommands: null,
     });
 
-    const coverage = (request.minimumCoverage ? { '@search.coverage': searchResults['@search.coverage'] } : {});
     const results = pipe(
-      searchResults.value,
+      searchResults.values,
       map(({
         ['@search.score']: score,
         ['@search.highlights']: highlights,
@@ -88,8 +95,10 @@ export class SuggestEngine<T extends object> {
       toArray,
     );
 
+    const coverage = request.minimumCoverage ? 100 : null;
+
     return {
-      ...coverage,
+      ...(coverage == null ? {} : { '@search.coverage': coverage}),
       value: results,
     };
   }

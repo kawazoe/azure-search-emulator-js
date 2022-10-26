@@ -4,13 +4,13 @@ import type { People } from './lib/mockSchema';
 import { peopleSchemaService } from './lib/mockSchema';
 
 import type { SearchDocumentMeta } from '../src';
-import { SearchEngine } from '../src';
+import { SearchEngine, SearchBackend } from '../src';
 
 function createEmpty() {
-  return new SearchEngine(peopleSchemaService, () => []);
+  return new SearchEngine(new SearchBackend<People>(peopleSchemaService, () => []));
 }
 function createBasic() {
-  return new SearchEngine<People>(
+  return new SearchEngine(new SearchBackend<People>(
     peopleSchemaService,
     () => [
       { id: '1', fullName: 'foo' },
@@ -18,7 +18,7 @@ function createBasic() {
       { id: '3', fullName: 'biz' },
       { id: '4', fullName: 'buzz' },
     ]
-  );
+  ));
 }
 function createComplex() {
   const document:People = {
@@ -45,13 +45,13 @@ function createComplex() {
     }
   };
 
-  return new SearchEngine<People>(
+  return new SearchEngine(new SearchBackend<People>(
     peopleSchemaService,
     () => [document],
-  );
+  ));
 }
 function createFacetable() {
-  return new SearchEngine<People>(
+  return new SearchEngine(new SearchBackend<People>(
     peopleSchemaService,
     () => [
       { id: '1', fullName: 'foo', income: 400, addresses: [{ parts: 'adr1', kind: 'home' }] },
@@ -59,15 +59,16 @@ function createFacetable() {
       { id: '3', fullName: 'biz', income: 400, addresses: [{ parts: 'adr3', kind: 'work' }] },
       { id: '4', fullName: 'buzz', income: 70, addresses: [{ parts: 'adr4', kind: 'home' }] },
     ]
-  );
+  ));
 }
 function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
-  return new SearchEngine<People>(
+
+  return new SearchEngine(new SearchBackend<People>(
     peopleSchemaService,
     () => documents
-  );
+  ));
 }
 
 function stripSearchMeta<T extends object>({
@@ -221,10 +222,10 @@ describe('SearchEngine', () => {
 
       const results = sut.search({ search: 'z' });
 
-      // 0.333 for /z/ at index 2 of baz
-      expect(results.value[0]['@search.score']).toBeCloseTo(0.333333);
       // 0.5 for /z/ at index 2 of buzz + 0.25 for /z/ at index 3 of buzz
-      expect(results.value[1]['@search.score']).toBeCloseTo(0.75);
+      expect(results.value[0]['@search.score']).toBeCloseTo(0.75);
+      // 0.333 for /z/ at index 2 of baz
+      expect(results.value[1]['@search.score']).toBeCloseTo(0.333333);
     });
   });
 

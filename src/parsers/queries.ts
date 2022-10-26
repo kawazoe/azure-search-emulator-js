@@ -17,6 +17,7 @@ import type {
   FacetActions
 } from './asts';
 import { FlatSchema, matchSchemaRequirement, SchemaMatcherRequirements } from '../services';
+import { normalizeValue } from '../services/utils';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
@@ -251,10 +252,12 @@ export const facet: FacetParser = {
         };
       }
       const acc = accumulator[field];
-      const value = `${getValue(input, fieldPath)}`;
 
-      const counter = acc.results[value];
-      acc.results[value] = counter ? counter + 1 : 1;
+      const value = normalizeValue(getValue(input, fieldPath));
+      for (const val of value) {
+        const counter = acc.results[val];
+        acc.results[val] = counter ? counter + 1 : 1;
+      }
 
       return accumulator;
     }

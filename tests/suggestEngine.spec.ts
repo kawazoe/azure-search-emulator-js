@@ -1,24 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { _throw } from '../src/lib/_throw';
-
 import type { People } from './lib/mockSchema';
-import { peopleSchemaKey, peopleSchemaService, suggesters } from './lib/mockSchema';
+import { peopleSchemaKey, peopleSchemaService, peopleSuggesterProvider } from './lib/mockSchema';
 
-import { SearchEngine, SuggestEngine } from '../src';
-
-const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
+import { SuggestEngine, SearchBackend } from '../src';
 
 function createEmpty() {
   return new SuggestEngine(
-    new SearchEngine(peopleSchemaService, () => []),
+    new SearchBackend<People>(peopleSchemaService, () => []),
     () => peopleSchemaKey,
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 function createBasic() {
   return new SuggestEngine(
-    new SearchEngine<People>(
+    new SearchBackend<People>(
       peopleSchemaService,
       () => [
         { id: '1', fullName: 'foo' },
@@ -28,7 +24,7 @@ function createBasic() {
       ]
     ),
     () => peopleSchemaKey,
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 function createComplex() {
@@ -57,24 +53,25 @@ function createComplex() {
   };
 
   return new SuggestEngine<People>(
-    new SearchEngine<People>(
+    new SearchBackend<People>(
       peopleSchemaService,
     () => [document],
     ),
     () => peopleSchemaKey,
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+
   return new SuggestEngine<People>(
-    new SearchEngine<People>(
+    new SearchBackend<People>(
       peopleSchemaService,
       () => documents
     ),
     () => peopleSchemaKey,
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 

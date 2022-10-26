@@ -2,6 +2,7 @@ import { _never } from '../lib/_never';
 import { CustomError } from '../lib/errors';
 import { pipe } from '../lib/functions';
 import { filter, flatten, groupBy, isIterable, map, toArray } from '../lib/iterables';
+import * as Parsers from '../parsers';
 
 export type KeyFieldDefinition = {
   name: string;
@@ -191,7 +192,7 @@ export type BasicFieldDefinition =
 export type FieldDefinition = KeyFieldDefinition | BasicFieldDefinition;
 
 export type Schema = FieldDefinition[];
-export type FlatSchema = [string, FieldDefinition][];
+export type FlatSchema = [string, string[], FieldDefinition][];
 
 export function isKeyFieldDefinition(field: FieldDefinition): field is KeyFieldDefinition {
   return field.type === 'Edm.String' && field.key === true;
@@ -330,15 +331,15 @@ function createAssertSchema<T>(keyField: KeyFieldDefinition, fields: FieldDefini
   };
 }
 
-function *flattenSchema(schema: FieldDefinition[]): Iterable<[string, FieldDefinition]> {
+function *flattenSchema(schema: FieldDefinition[]): Iterable<[string, string[], FieldDefinition]> {
   for (const field of schema) {
-    yield [field.name, field];
+    yield [field.name, [field.name], field];
 
     if (field.type === 'Edm.ComplexType' || field.type === 'Collection(Edm.ComplexType)') {
       const subFields = flattenSchema(field.fields);
 
-      for (const [subName, subField] of subFields) {
-        yield [`${field.name}/${subName}`, subField];
+      for (const [subName, subPath, subField] of subFields) {
+        yield [`${field.name}/${subName}`, [field.name, ...subPath], subField];
       }
     }
   }
@@ -408,7 +409,7 @@ function matchFieldRequirement(field: FieldDefinition, require: SchemaMatcherReq
 export function matchSchemaRequirement(schema: FlatSchema, fieldPath: string, require: SchemaMatcherRequirements): string | null {
   const definition = schema.find(([p]) => fieldPath === p);
   return definition
-    ? matchFieldRequirement(definition[1], require, fieldPath)
+    ? matchFieldRequirement(definition[2], require, fieldPath)
     : `Field '${fieldPath}' not found in schema.`;
 }
 
@@ -419,11 +420,11 @@ export class SchemaService<T extends object> {
     return new SchemaService(
       keyField,
       flatSchema,
-      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'searchable', p) == null),
-      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'filterable', p) == null),
-      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'sortable', p) == null),
-      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'facetable', p) == null),
-      flatSchema.filter(([p, f]) => matchFieldRequirement(f, 'retrievable', p) == null),
+      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'searchable', n) == null),
+      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'filterable', n) == null),
+      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'sortable', n) == null),
+      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'facetable', n) == null),
+      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'retrievable', n) == null),
       assertSchema,
     );
   }
@@ -438,5 +439,27 @@ export class SchemaService<T extends object> {
     public readonly retrievableSchema: FlatSchema,
     public readonly assertSchema: (document: Record<string, unknown>) => T,
   ) {
+  }
+
+  public assertCommands(request: {
+    filterCommand: Parsers.FilterParserResult | null,
+    orderByCommand: Parsers.OrderByParserResult | null,
+    selectCommand: Parsers.SelectParserResult | null,
+    searchFieldsCommand: Parsers.SelectParserResult | null,
+    highlightCommand: Parsers.HighlighParserResult | null,
+    facetCommands: Parsers.FacetParserResult[] | null,
+  }): void {
+    const requirementFailures: string[] = [
+      ...(request.filterCommand?.canApply(this.filtrableSchema) ?? []),
+      ...(request.orderByCommand?.canApply(this.sortableSchema) ?? []),
+      ...(request.selectCommand?.canApply(this.retrievableSchema) ?? []),
+      ...(request.searchFieldsCommand?.canApply(this.searchableSchema) ?? []),
+      ...(request.highlightCommand?.canApply(this.searchableSchema) ?? []),
+      ...(pipe(request.facetCommands ?? [], map(f => f.canApply(this.facetableSchema)), flatten)),
+    ];
+
+    if (requirementFailures.length) {
+      throw new SchemaError('Part of the request is not compatible with the current schema', requirementFailures);
+    }
   }
 }

@@ -1,24 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { _throw } from '../src/lib/_throw';
-
 import type { People } from './lib/mockSchema';
-import { peopleSchemaService, suggesters } from './lib/mockSchema';
+import { peopleSchemaService, peopleSuggesterProvider } from './lib/mockSchema';
 
-import { SearchEngine, AutocompleteEngine } from '../src';
-
-
-const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
+import { AutocompleteEngine, SearchBackend } from '../src';
 
 function createEmpty() {
   return new AutocompleteEngine(
-    new SearchEngine(peopleSchemaService, () => []),
-    suggesterProvider,
+    new SearchBackend<People>(peopleSchemaService, () => []),
+    peopleSuggesterProvider,
   );
 }
 function createBasic() {
   return new AutocompleteEngine(
-    new SearchEngine<People>(
+    new SearchBackend<People>(
       peopleSchemaService,
       () => [
         { id: '1', fullName: 'foo' },
@@ -27,12 +22,12 @@ function createBasic() {
         { id: '4', fullName: 'buzz' },
       ]
     ),
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 function createLongData() {
   return new AutocompleteEngine(
-    new SearchEngine<People>(
+    new SearchBackend<People>(
       peopleSchemaService,
       () => [
         { id: '1', fullName: 'some \t very long \t name' },
@@ -40,18 +35,19 @@ function createLongData() {
         { id: '3', fullName: 'a longer   fullname with a repeating word' },
       ]
     ),
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+
   return new AutocompleteEngine<People>(
-    new SearchEngine<People>(
+    new SearchBackend<People>(
       peopleSchemaService,
       () => documents
     ),
-    suggesterProvider,
+    peopleSuggesterProvider,
   );
 }
 
@@ -82,8 +78,8 @@ describe('AutocompleteEngine', () => {
       const results = sut.autocomplete({ suggesterName: 'sg', search: 'long' });
 
       expect(results.value).toEqual([
-        { text: 'long', queryPlusText: 'long' },
         { text: 'longer', queryPlusText: 'longer' },
+        { text: 'long', queryPlusText: 'long' },
       ]);
     });
 
