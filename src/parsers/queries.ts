@@ -18,6 +18,7 @@ import type {
 } from './asts';
 import { FlatSchema, matchSchemaRequirement, SchemaMatcherRequirements } from '../services';
 import { normalizeValue } from '../services/utils';
+import { toPaths } from './asts';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
@@ -174,6 +175,7 @@ export const search: SearchParser = {
     return {
       ...ast,
       canApply: (schema: FlatSchema) => ast.canApply(schema, 'searchable'),
+      toPaths: () => toPaths(ast),
     };
   }
 };

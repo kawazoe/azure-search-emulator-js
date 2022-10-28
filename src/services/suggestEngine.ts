@@ -1,11 +1,17 @@
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
-import { pipe } from '../lib/functions';
-import { filter, flatten, map, sortBy, take, toArray, toIterable } from '../lib/iterables';
-
 import type { KeyFieldDefinition } from './schema';
-import { SearchBackend } from './searchBackend';
-import * as Parsers from '../parsers';
+import type { SuggestResult } from './searchBackend';
+import {
+  SearchBackend,
+  useCoverage,
+  useSelect,
+  useFilterScoring,
+  useLimiterMiddleware,
+  useOrderBy,
+  useSearchScoring,
+  createHighlightSuggestionStrategy, useSuggestResult, useStripScore
+} from './searchBackend';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {
   filter?: string;          //< OData Filter expression
@@ -21,10 +27,6 @@ export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | 
   top?: number;
 }
 
-export interface SuggestDocumentMeta {
-  '@search.text': string;
-}
-export type SuggestResult<T extends object> = SuggestDocumentMeta & T;
 export interface SuggestDocumentsResult<T extends object> {
   '@search.coverage'?: number;
   value: SuggestResult<T>[];
@@ -48,58 +50,29 @@ export class SuggestEngine<T extends object> {
   }
 
   public suggest<Keys extends ODataSelect<T>>(request: SuggestRequest<T, Keys>): SuggestDocumentsResult<ODataSelectResult<T, Keys>> {
-    const select = request.select ?? [this.keyFieldProvider().name as Keys];
-    const highlight = request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', ');
-    const top = request.top && Math.min(request.top, maxPageSize) || defaultPageSize;
+    const documentMiddlewares = [
+      ...(request.filter ? [useFilterScoring<T, Keys>(request.filter)] : []),
+      ...(request.search ? [useSearchScoring<T, Keys>({
+        search: request.search,
+        searchFields: request.searchFields ?? '*',
+        suggestionStrategy: createHighlightSuggestionStrategy<T>({
+          highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
+          preTag: request.highlightPreTag ?? '',
+          postTag: request.highlightPostTag ?? '',
+          maxPadding: 30,
+        }),
+      })] : []),
+      useSelect<T, Keys>(request.select ?? [this.keyFieldProvider().name as Keys]),
+      useSuggestResult<T, Keys>(),
+    ];
 
-    const filterCommand = request.filter && Parsers.filter.parse(request.filter) || null;
-    const orderByCommand = Parsers.orderBy.parse(request.orderBy ?? 'search.score() desc');
-    const selectCommand = select && Parsers.select.parse(select.join(', ')) || null;
-    const searchFieldsCommand = request.searchFields && Parsers.search.parse(request.searchFields) || null;
-    const highlightCommand = highlight && Parsers.highlight.parse(highlight) || null;
+    const resultsMiddlewares = [
+      useOrderBy<T, Keys>(request.orderBy ?? 'search.score() desc'),
+      ...(request.minimumCoverage ? [useCoverage<T, Keys>()] : []),
+      useLimiterMiddleware<T, Keys>(request.top && Math.min(request.top, maxPageSize) || defaultPageSize),
+      useStripScore<T, Keys>(),
+    ];
 
-    const searchResults = this.backend.search({
-      search: request.search,
-      highlightPreTag: request.highlightPreTag ?? '',
-      highlightPostTag: request.highlightPostTag ?? '',
-      filterCommand,
-      orderByCommand,
-      selectCommand,
-      searchFieldsCommand,
-      highlightCommand,
-      facetCommands: null,
-    });
-
-    const results = pipe(
-      searchResults.values,
-      map(({
-        ['@search.score']: score,
-        ['@search.highlights']: highlights,
-        ['@search.features']: features,
-        ...rest
-      }) => pipe(
-        toIterable(highlights),
-        filter(([k]) => !k.endsWith('@odata.type')),
-        sortBy(([k]) => features[k].similarityScore, sortBy.desc),
-        map(([,highlight]) => pipe(
-          highlight,
-          map((v) => ({
-            '@search.text': v,
-            ...rest,
-          } as unknown as SuggestResult<ODataSelectResult<T, Keys>>)),
-        )),
-        flatten,
-      )),
-      flatten,
-      take(top),
-      toArray,
-    );
-
-    const coverage = request.minimumCoverage ? 100 : null;
-
-    return {
-      ...(coverage == null ? {} : { '@search.coverage': coverage}),
-      value: results,
-    };
+    return this.backend.search({ documentMiddlewares, resultsMiddlewares }) as SuggestDocumentsResult<ODataSelectResult<T, Keys>>;
   }
 }

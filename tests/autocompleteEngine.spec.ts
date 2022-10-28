@@ -30,9 +30,9 @@ function createLongData() {
     new SearchBackend<People>(
       peopleSchemaService,
       () => [
-        { id: '1', fullName: 'some \t very long \t name' },
-        { id: '2', fullName: 'a value' },
-        { id: '3', fullName: 'a longer   fullname with a repeating word' },
+        { id: '1', fullName: 'a longer   fullname with a repeating word' },
+        { id: '2', fullName: 'some \t very long \t name' },
+        { id: '3', fullName: 'a value' },
       ]
     ),
     peopleSuggesterProvider,

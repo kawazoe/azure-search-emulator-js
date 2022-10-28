@@ -33,7 +33,14 @@
 
 /* Top-level rules */
 select_expression
-    : WILDCARD EOF
+    : EOF
+    {
+        yy.ast.type = "LIST";
+        yy.ast.value = [];
+        yy.ast.canApply = () => [];
+        yy.ast.apply = (input) => ({});
+    }
+    | WILDCARD EOF
     {
         yy.ast.type = "WILDCARD";
         yy.ast.canApply = () => [];

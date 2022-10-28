@@ -1,4 +1,4 @@
-import { FlatSchema } from '../services/schema';
+import { FlatSchema } from '../services';
 
 export type AstIdentifier = { type: 'IDENTIFIER', value: string };
 export type AstFieldPath = { type: 'FIELD_PATH', value: string[] };
@@ -68,6 +68,16 @@ export type AstWildcard = { type: 'WILDCARD' };
 export type SelectAst =
   AstWildcard |
   AstList<AstIdentifier | AstFieldPath>;
+
+export function toPaths(ast: SelectAst) {
+  return ast.type === 'WILDCARD'
+    ? []
+    : ast.value.map(f =>
+      Array.isArray(f.value)
+        ? f.value.join('/')
+        : f.value
+    );
+}
 
 export type FacetParamsAst = {
   count: number,

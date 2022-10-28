@@ -1,5 +1,5 @@
 import { pipe } from '../lib/functions';
-import { flatten, map, toArray } from '../lib/iterables';
+import { flat, map, toArray } from '../lib/iterables';
 
 /**
  * When handling data from documents, we can look through:
@@ -16,7 +16,7 @@ export function normalizeValue(value: unknown): string[] {
       ? pipe(
         val as unknown[],
         map(c => normalizeValue(c)),
-        flatten,
+        flat,
       )
       : [`${val}`]
   }

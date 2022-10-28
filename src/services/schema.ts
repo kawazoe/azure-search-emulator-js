@@ -1,7 +1,7 @@
 import { _never } from '../lib/_never';
 import { CustomError } from '../lib/errors';
 import { pipe } from '../lib/functions';
-import { filter, flatten, groupBy, isIterable, map, toArray } from '../lib/iterables';
+import { filter, flat, groupBy, isIterable, map, toArray } from '../lib/iterables';
 import * as Parsers from '../parsers';
 
 export type KeyFieldDefinition = {
@@ -192,7 +192,8 @@ export type BasicFieldDefinition =
 export type FieldDefinition = KeyFieldDefinition | BasicFieldDefinition;
 
 export type Schema = FieldDefinition[];
-export type FlatSchema = [string, string[], FieldDefinition][];
+export type FlatSchemaEntry = [string, string[], FieldDefinition];
+export type FlatSchema = FlatSchemaEntry[];
 
 export function isKeyFieldDefinition(field: FieldDefinition): field is KeyFieldDefinition {
   return field.type === 'Edm.String' && field.key === true;
@@ -221,7 +222,7 @@ const isEdmCollection = (subType: FieldDefinition, value: unknown) =>
   Array.isArray(value) && pipe(
     value,
     map(f => validateSingleProp(subType, f)),
-    flatten
+    flat
   );
 
 export class SchemaError extends CustomError {
@@ -442,12 +443,12 @@ export class SchemaService<T extends object> {
   }
 
   public assertCommands(request: {
-    filterCommand: Parsers.FilterParserResult | null,
-    orderByCommand: Parsers.OrderByParserResult | null,
-    selectCommand: Parsers.SelectParserResult | null,
-    searchFieldsCommand: Parsers.SelectParserResult | null,
-    highlightCommand: Parsers.HighlighParserResult | null,
-    facetCommands: Parsers.FacetParserResult[] | null,
+    filterCommand?: Parsers.FilterParserResult,
+    orderByCommand?: Parsers.OrderByParserResult,
+    selectCommand?: Parsers.SelectParserResult,
+    searchFieldsCommand?: Parsers.SelectParserResult,
+    highlightCommand?: Parsers.HighlighParserResult,
+    facetCommands?: Parsers.FacetParserResult[],
   }): void {
     const requirementFailures: string[] = [
       ...(request.filterCommand?.canApply(this.filtrableSchema) ?? []),
@@ -455,7 +456,7 @@ export class SchemaService<T extends object> {
       ...(request.selectCommand?.canApply(this.retrievableSchema) ?? []),
       ...(request.searchFieldsCommand?.canApply(this.searchableSchema) ?? []),
       ...(request.highlightCommand?.canApply(this.searchableSchema) ?? []),
-      ...(pipe(request.facetCommands ?? [], map(f => f.canApply(this.facetableSchema)), flatten)),
+      ...(pipe(request.facetCommands ?? [], map(f => f.canApply(this.facetableSchema)), flat)),
     ];
 
     if (requirementFailures.length) {

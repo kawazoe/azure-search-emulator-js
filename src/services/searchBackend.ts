@@ -1,19 +1,29 @@
 import { pipe } from '../lib/functions';
 import {
   filter,
-  flatten,
+  flat,
+  identity,
   map,
   reduce,
+  sort,
+  sortBy,
   sum,
+  take,
   toArray,
+  toIterable,
+  toRecord,
   uniq
 } from '../lib/iterables';
 import { getValue } from '../lib/objects';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
+import { toODataQuery } from '../lib/odata';
+import { _throw } from '../lib/_throw';
+
+import type { FieldDefinition, FlatSchemaEntry } from './schema';
+import { SchemaService } from './schema';
 
 import * as Parsers from '../parsers';
-import type { FieldDefinition, FlatSchema } from './schema';
-import { SchemaService } from './schema';
+
 import { normalizeValue } from './utils';
 
 export interface SearchFacetBase {
@@ -33,166 +43,442 @@ export interface SearchFeature {
   termFrequency: number;
 }
 export type SearchFeatures = Record<string, SearchFeature>;
+export type SearchSuggestions = Record<string, unknown[]>;
 export interface SearchDocumentMeta {
   '@search.score'?: number;
   '@search.highlights': SearchHighlights;
   '@search.features': SearchFeatures;
 }
+
 export type SearchResult<T extends object> = SearchDocumentMeta & T;
-
-const maxHighlightPadding = 30;
-
-function toPaths(ast: Parsers.SelectAst | null) {
-  return ast == null || ast.type === 'WILDCARD'
-    ? []
-    : ast.value.map(f =>
-      Array.isArray(f.value)
-        ? f.value.join('/')
-        : f.value
-    );
+export interface AutocompleteResult {
+  '@search.score'?: number;
+  text: string;
+  queryPlusText: string;
+}
+export interface SuggestDocumentMeta {
+  '@search.score'?: number;
+  '@search.text': string;
+}
+export type SuggestResult<T extends object> = SuggestDocumentMeta & T;
+export interface BackendResults<T extends object> {
+  '@odata.count'?: number;
+  '@search.coverage'?: number;
+  '@search.facets'?: Record<string, SearchFacetBase[]>;
+  '@search.nextPageParameters'?: Record<string, unknown>;
+  value: (SearchResult<T> | SuggestResult<T> | AutocompleteResult)[];
+  '@odata.nextLink'?: string;
 }
 
-type Reducer<T extends object, Keys extends ODataSelect<T>> = (
-  accumulator: {
-    facets: Parsers.FacetResults,
-    values: SearchResult<ODataSelectResult<T, Keys>>[]
-  },
+export interface ReductionResults<T extends object> {
+  facets: Parsers.FacetResults;
+  values: (SearchResult<T> | SuggestResult<T> | AutocompleteResult)[];
+}
+export type Reducer<T extends object, Keys extends ODataSelect<T>> = (
+  accumulator: ReductionResults<ODataSelectResult<T, Keys>>,
   current: {
     document: T,
+    selected?: ODataSelectResult<T, Keys>,
     filterMatch: boolean,
     filterScore: number,
     searchMatch: boolean,
     searchScore: number,
-    highlights: SearchHighlights,
-    features: SearchFeatures
+    suggestions: SearchSuggestions,
+    features: SearchFeatures,
   }
-) => { facets: Parsers.FacetResults, values: SearchResult<ODataSelectResult<T, Keys>>[] };
+) => ReductionResults<ODataSelectResult<T, Keys>>;
+export type DocumentMiddleware<T extends object, Keys extends ODataSelect<T>> = (
+  next: Reducer<T, Keys>,
+  schemaService: SchemaService<T>
+) => Reducer<T, Keys>;
 
-function createNothingReducer<T extends object, Keys extends ODataSelect<T>>(): Reducer<T, Keys> {
-  return (acc) => acc;
+export function useFilterScoring<T extends object, Keys extends ODataSelect<T>>(filter: string): DocumentMiddleware<T, Keys> {
+  return (next, schemaService) => {
+    const filterCommand = Parsers.filter.parse(filter);
+    schemaService.assertCommands({filterCommand});
+
+    return (acc, cur) => {
+      cur.filterScore = filterCommand.apply(cur.document);
+      cur.filterMatch = cur.filterScore > 0;
+
+      if (!cur.filterMatch) {
+        return acc;
+      }
+
+      return next(acc, cur);
+    };
+  }
 }
 
-function createDocumentFullReducer<T extends object, Keys extends ODataSelect<T>>(next: Reducer<T, Keys>): Reducer<T, Keys> {
-  return (acc, cur) => {
+export type SearchMatch = { input: string, match: string, index: number }
+export type SuggestionStrategy<T extends object> =
+  (schemaService: SchemaService<T>) => (ctx: FlatSchemaEntry, matches: SearchMatch[]) => unknown[];
+export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(options: {
+  search: string,
+  searchFields: string,
+  suggestionStrategy: SuggestionStrategy<T>,
+}): DocumentMiddleware<T, Keys> {
+  return (next, schemaService) => {
+    const searchFieldsCommand = Parsers.search.parse(options.searchFields);
+    schemaService.assertCommands({ searchFieldsCommand });
+
+    const searchFieldPaths = searchFieldsCommand.toPaths();
+    const searchables = searchFieldPaths.length > 0
+      ? schemaService.searchableSchema.filter(([n]) => searchFieldPaths.includes(n))
+      : schemaService.searchableSchema;
+
+    const searchRegex = new RegExp(options.search, 'g');
+
+    const suggestionStrategy = options.suggestionStrategy(schemaService);
+
+    return (acc, cur) => {
+      // TODO: Replace tuple with object for readability
+      for (const searchable of searchables) {
+        const value = getValue(cur.document, searchable[1]);
+
+        if (value == null) {
+          continue;
+        }
+
+        const normalized = normalizeValue(value);
+        const matches = pipe(
+          normalized,
+          map(str => str.matchAll(searchRegex)),
+          flat,
+          // Ignore empty results
+          filter(m => !!m[0]),
+          // Ignore group results. Only look at the complete match
+          map((m) => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' } as SearchMatch)),
+          toArray,
+        );
+
+        if (matches.length > 0) {
+          cur.searchScore += sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
+
+          const uniqueMatches = pipe(matches, uniq(m => m.match), toArray);
+          const valueLength = sum(normalized.map(v => v.length));
+          const matchedLength = sum(matches.map(t => t.match.length));
+          const similarityScore = valueLength === 0
+            ? 0
+            : (matchedLength / valueLength);
+
+          cur.suggestions[searchable[0]] = suggestionStrategy(searchable, uniqueMatches);
+
+          cur.features[searchable[0]] = {
+            uniqueTokenMatches: uniqueMatches.length,
+            similarityScore,
+            termFrequency: matches.length,
+          }
+        }
+      }
+
+      cur.searchMatch = cur.searchScore > 0;
+
+      if (!cur.searchMatch) {
+        return acc;
+      }
+
+      return next(acc, cur);
+    };
+  }
+}
+
+export function createHighlightSuggestionStrategy<T extends object>(options: {
+  highlight: string,
+  preTag: string,
+  postTag: string,
+  maxPadding: number,
+}): SuggestionStrategy<T> {
+  return (schemaService) => {
+    const highlightCommand = Parsers.highlight.parse(options.highlight);
+    schemaService.assertCommands({ highlightCommand });
+
+    const highlightPaths = highlightCommand.toPaths();
+
+    return (ctx, matches) => {
+      if (!highlightPaths.includes(ctx[0])) {
+        return [];
+      }
+
+      return pipe(
+        matches,
+        map(m => {
+          const leftPadding = m.input.slice(Math.max(0, m.index - options.maxPadding), m.index);
+          const rightPadding = m.input.slice(m.index + m.match.length, m.index + m.match.length + options.maxPadding);
+          return `${leftPadding}${options.preTag}${m.match}${options.postTag}${rightPadding}`
+        }),
+        toArray,
+      );
+    };
+  };
+}
+
+export type AutocompleteModes = 'oneTerm' | 'twoTerms' | 'oneTermWithContext';
+
+const matchedPartSeparatorRegEx = /\s+/g;
+const suggestedPartSeparatorRegEx = /\s+|$/g;
+
+const autocompleteCutoffs:  Record<AutocompleteModes, (matches: RegExpMatchArray[]) => RegExpMatchArray | undefined> = {
+  oneTerm: (s) => s[0],
+  twoTerms: (s) => s[1] ?? s[0],
+  oneTermWithContext: () => _throw(new Error('oneTermWithContext autocompleteMode is not supported.')),
+};
+export function createAutocompleteSuggestionStrategy<T extends object>(options: {
+  highlight: string,
+  preTag: string,
+  postTag: string,
+  mode: AutocompleteModes,
+}): SuggestionStrategy<T> {
+  return (schemaService) => {
+    const highlightCommand = Parsers.highlight.parse(options.highlight);
+    schemaService.assertCommands({ highlightCommand });
+
+    const highlightPaths = highlightCommand.toPaths();
+    const getCutoff = autocompleteCutoffs[options.mode ?? 'oneTerm'];
+
+    return (ctx, matches) => {
+      if (!highlightPaths.includes(ctx[0])) {
+        return [];
+      }
+
+      return pipe(
+        matches,
+        map((match) => {
+          const matchedPart = match.match;
+
+          const matchedPartSeparators = Array.from(matchedPart.matchAll(matchedPartSeparatorRegEx));
+          const lastMatchedWordSeparator = matchedPartSeparators[matchedPartSeparators.length - 1];
+          const lastMatchedWord = lastMatchedWordSeparator
+            ? matchedPart.slice((lastMatchedWordSeparator.index ?? 0) + lastMatchedWordSeparator[0].length)
+            : matchedPart;
+
+          const suggestedPart = match.input.slice(match.index + match.match.length);
+          const suggestedPartSeparators = Array.from(suggestedPart.matchAll(suggestedPartSeparatorRegEx));
+          const lastSuggestedWordSeparator = getCutoff(suggestedPartSeparators);
+          const suggestedWords = lastSuggestedWordSeparator
+            ? suggestedPart.slice(0, lastSuggestedWordSeparator.index)
+            : suggestedPart;
+
+          return {
+            text: `${lastMatchedWord}${suggestedWords}`,
+            queryPlusText: `${options.preTag ?? ''}${matchedPart}${options.postTag ?? ''}${suggestedWords}`
+          };
+        }),
+        toArray,
+      );
+    };
+  };
+}
+
+export function useSelect<T extends object, Keys extends ODataSelect<T>>(select: Keys[]): DocumentMiddleware<T, Keys> {
+  return (next, schemaService) => {
+    const selectCommand = Parsers.select.parse(select.join(', '));
+    schemaService.assertCommands({selectCommand});
+
+    return (acc, cur) => {
+      cur.selected = selectCommand.apply(cur.document) as ODataSelectResult<T, Keys>;
+
+      return next(acc, cur);
+    };
+  }
+}
+
+export function useFacetExtraction<T extends object, Keys extends ODataSelect<T>>(facets: string[]): DocumentMiddleware<T, Keys> {
+  return (next, schemaService) => {
+    const facetCommands = facets.map(f => Parsers.facet.parse(f));
+    schemaService.assertCommands({facetCommands});
+
+    return (acc, cur) => {
+      acc.facets = facetCommands.reduce((a, c) => c.apply(a, cur.document), acc.facets);
+
+      return next(acc, cur);
+    };
+  }
+}
+
+export function useSearchResult<T extends object, Keys extends ODataSelect<T>>(): DocumentMiddleware<T, Keys> {
+  return (next) => (acc, cur) => {
     acc.values.push({
-      ...cur.document as unknown as ODataSelectResult<T, Keys>,
+      ...cur.selected ?? cur.document,
       '@search.score': cur.filterScore + cur.searchScore,
-      '@search.highlights': cur.highlights,
+      '@search.highlights': cur.suggestions,
       '@search.features': cur.features,
-    });
+    } as unknown as SearchResult<ODataSelectResult<T, Keys>>);
 
     return next(acc, cur);
   };
 }
-function createDocumentSelectedReducer<T extends object, Keys extends ODataSelect<T>>(selectCommand: Parsers.SelectParserResult, next: Reducer<T, Keys>): Reducer<T, Keys> {
-  return (acc, cur) => {
-    acc.values.push({
-      ...selectCommand.apply(cur.document) as ODataSelectResult<T, Keys>,
-      '@search.score': cur.filterScore + cur.searchScore,
-      '@search.highlights': cur.highlights,
-      '@search.features': cur.features,
-    } as SearchResult<ODataSelectResult<T, Keys>>);
+
+export function useSuggestResult<T extends object, Keys extends ODataSelect<T>>(): DocumentMiddleware<T, Keys> {
+  return (next) => (acc, cur) => {
+    const suggestions = pipe(
+      toIterable(cur.suggestions),
+      sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc),
+      map(([, suggestions]) => pipe(
+        suggestions,
+        map((s) => ({
+          '@search.score': cur.filterScore + cur.searchScore,
+          '@search.text': `${s}`,
+          ...cur.selected ?? cur.document,
+        })),
+      )),
+      flat,
+    );
+
+    for (const suggestion of suggestions) {
+      acc.values.push(suggestion as unknown as SuggestResult<ODataSelectResult<T, Keys>>)
+    }
 
     return next(acc, cur);
-  }
+  };
 }
 
-function createFacetReducer<T extends object, Keys extends ODataSelect<T>>(facetCommands: Parsers.FacetParserResult[], next: Reducer<T, Keys>): Reducer<T, Keys> {
-  return (acc, cur) => {
-    acc.facets = facetCommands.reduce((a, c) => c.apply(a, cur.document), acc.facets);
+export function useAutocompleteResult<T extends object, Keys extends ODataSelect<T>>(): DocumentMiddleware<T, Keys> {
+  return (next) => (acc, cur) => {
+    const suggestions = pipe(
+      toIterable(cur.suggestions as Record<string, AutocompleteResult[]>),
+      sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc),
+      map(([, suggestions]) => pipe(
+        suggestions,
+        map(result => ({
+          '@search.score': cur.filterScore + cur.searchScore,
+          ...result,
+        })),
+        uniq(r => r.queryPlusText),
+      )),
+      flat,
+    );
+
+    for (const suggestion of suggestions) {
+      acc.values.push(suggestion as unknown as AutocompleteResult)
+    }
 
     return next(acc, cur);
-  }
+  };
 }
 
-function createSearchScoreReducer<T extends object, Keys extends ODataSelect<T>>(
-  search: string,
-  searchableSchema: FlatSchema,
-  searchFieldsCommand: Parsers.SelectParserResult | null,
-  highlightCommand: Parsers.HighlighParserResult | null,
-  highlightPreTag: string,
-  highlightPostTag: string,
-  next: Reducer<T, Keys>,
-): Reducer<T, Keys> {
-  const searchFieldPaths = toPaths(searchFieldsCommand);
-  const searchables = searchFieldPaths.length > 0
-    ? searchableSchema.filter(([n]) => searchFieldPaths.includes(n))
-    : searchableSchema;
+export type Transformer<T extends object, Keys extends ODataSelect<T>> = (
+  reduction: ReductionResults<ODataSelectResult<T, Keys>>,
+  results: BackendResults<ODataSelectResult<T, Keys>>,
+) => BackendResults<ODataSelectResult<T, Keys>>
+export type ResultsMiddleware<T extends object, Keys extends ODataSelect<T>> = (
+  next: Transformer<T, Keys>,
+  schemaService: SchemaService<T>
+) => Transformer<T, Keys>;
 
-  const highlightPaths = toPaths(highlightCommand);
-  const searchRegex = new RegExp(search, 'g');
+export function useOrderBy<T extends object, Keys extends ODataSelect<T>>(orderBy: string): ResultsMiddleware<T, Keys> {
+  return (next, schemaService) => {
+    const orderByCommand = Parsers.orderBy.parse(orderBy);
+    schemaService.assertCommands({ orderByCommand });
 
-  return (acc, cur) => {
-    for (const [name, path, field] of searchables) {
-      const value = getValue(cur.document, path);
+    return (reduction, results) => {
+      reduction.values.sort(orderByCommand.apply);
 
-      if (value == null) {
-        continue;
+      return next(reduction, results);
+    };
+  };
+}
+
+export function useCount<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
+  return (next) => {
+    return (reduction, results) => {
+      results['@odata.count'] = reduction.values.length;
+
+      return next(reduction, results);
+    };
+  };
+}
+
+export function useCoverage<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
+  return (next) => {
+    return (reduction, results) => {
+      results['@search.coverage'] = 100;
+
+      return next(reduction, results);
+    };
+  };
+}
+
+export function useFacetTransformation<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
+  return (next) => {
+    return (reduction, results) => {
+      results['@search.facets'] = pipe(
+        toIterable(reduction.facets),
+        map(([key, facet]): [string, SearchFacetBase[]] => [
+          key,
+          pipe(
+            toIterable(facet.results),
+            facet.params.sort ? sort(facet.params.sort) : identity,
+            take(facet.params.count),
+            // TODO: Add support for ranged facets
+            map(([value, count]) => ({value, count} as SearchFacetValue)),
+            toArray
+          ),
+        ]),
+        toRecord,
+      );
+
+      return next(reduction, results);
+    };
+  };
+}
+
+export function usePagingMiddleware<T extends object, Keys extends ODataSelect<T>>(options: {
+  skip: number,
+  top: number,
+  maxPageSize: number,
+  request: unknown
+}): ResultsMiddleware<T, Keys> {
+  return (next) => {
+    return (reduction, results) => {
+      const pageSize = Math.min(options.top, options.maxPageSize);
+      const page = reduction.values.slice(options.skip, options.skip + pageSize);
+
+      const nextPageRequest = options.top > options.maxPageSize && reduction.values.length > options.skip + pageSize
+        ? {
+          ...options.request as any,
+          skip: options.skip + pageSize,
+          top: options.top - pageSize,
+        }
+        : undefined;
+
+      if (nextPageRequest) {
+        results['@search.nextPageParameters'] = nextPageRequest;
+        results['@odata.nextLink'] = toODataQuery(nextPageRequest);
       }
 
-      const normalized = normalizeValue(value);
-      const matches = pipe(
-        normalized,
-        map(str => str.matchAll(searchRegex)),
-        flatten,
-        // Ignore empty results
-        filter(m => !!m[0]),
-        // Ignore group results. Only look at the complete match
-        map((m) => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' })),
+      results.value = page;
+
+      return next(reduction, results);
+    };
+  };
+}
+export function useLimiterMiddleware<T extends object, Keys extends ODataSelect<T>>(top: number): ResultsMiddleware<T, Keys> {
+  return (next) => {
+    return (reduction, results) => {
+      results.value = pipe(
+        reduction.values,
+        take(top),
         toArray,
       );
 
-      if (matches.length > 0) {
-        cur.searchScore += sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
-
-        const uniqueTokens = pipe(matches, uniq(m => m.match), toArray);
-        const valueLength = sum(normalized.map(v => v.length));
-        const matchedLength = sum(matches.map(t => t.match.length));
-
-        if (highlightPaths.includes(name)) {
-          cur.highlights[`${field.name}@odata.type`] = field.type;
-          cur.highlights[field.name] = pipe(
-            uniqueTokens,
-            map(m => {
-              const leftPadding = m.input.slice(Math.max(0, m.index - maxHighlightPadding), m.index);
-              const rightPadding = m.input.slice(m.index + m.match.length, m.index + m.match.length + maxHighlightPadding);
-              return `${leftPadding}${highlightPreTag}${m.match}${highlightPostTag}${rightPadding}`;
-            }),
-            toArray,
-          );
-        }
-
-        cur.features[field.name] = {
-          uniqueTokenMatches: uniqueTokens.length,
-          similarityScore: valueLength === 0
-            ? 0
-            : (matchedLength / valueLength),
-          termFrequency: matches.length,
-        }
-      }
-    }
-
-    cur.searchMatch = cur.searchScore > 0;
-
-    if (!cur.searchMatch) {
-      return acc;
-    }
-
-    return next(acc, cur);
-  }
+      return next(reduction, results);
+    };
+  };
 }
 
-function createFilterScoreReducer<T extends object, Keys extends ODataSelect<T>>(filterCommand: Parsers.FilterParserResult, next: Reducer<T, Keys>): Reducer<T, Keys> {
-  return (acc, cur) => {
-    cur.filterScore = filterCommand.apply(cur.document);
-    cur.filterMatch = cur.filterScore > 0;
+export function useStripScore<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
+  return (next) => {
+    return (reduction, results) => {
+      results.value = pipe(
+        results.value,
+        map(({['@search.score']: score, ...rest}) => rest as unknown as typeof results.value[number]),
+        toArray,
+      );
 
-    if (!cur.filterMatch) {
-      return acc;
-    }
-
-    return next(acc, cur);
-  }
+      return next(reduction, results);
+    };
+  };
 }
 
 export class SearchBackend<T extends object> {
@@ -203,48 +489,37 @@ export class SearchBackend<T extends object> {
   }
 
   public search<Keys extends ODataSelect<T>>(request: {
-    search: string | null,
-    highlightPreTag: string,
-    highlightPostTag: string,
-    filterCommand: Parsers.FilterParserResult | null,
-    orderByCommand: Parsers.OrderByParserResult | null,
-    selectCommand: Parsers.SelectParserResult | null,
-    searchFieldsCommand: Parsers.SelectParserResult | null,
-    highlightCommand: Parsers.HighlighParserResult | null,
-    facetCommands: Parsers.FacetParserResult[] | null,
-  }): { facets: Parsers.FacetResults, values: SearchResult<ODataSelectResult<T, Keys>>[] } {
-    this.schemaService.assertCommands(request);
+    documentMiddlewares: DocumentMiddleware<T, Keys>[],
+    resultsMiddlewares: ResultsMiddleware<T, Keys>[],
+  }): BackendResults<ODataSelectResult<T, Keys>> {
+    const reducer = [...request.documentMiddlewares]
+      .reverse()
+      .reduce(
+        (acc, cur) => cur(acc, this.schemaService),
+        (acc => acc) as Reducer<T, Keys>
+      );
 
-    let reducer: Reducer<T, Keys> = createNothingReducer();
-
-    if (request.selectCommand) {
-      reducer = createDocumentSelectedReducer(request.selectCommand, reducer);
-    } else {
-      reducer = createDocumentFullReducer(reducer);
-    }
-
-    if (request.facetCommands) {
-      reducer = createFacetReducer(request.facetCommands, reducer);
-    }
-
-    if (request.search) {
-      reducer = createSearchScoreReducer(request.search, this.schemaService.searchableSchema, request.searchFieldsCommand, request.highlightCommand, request.highlightPreTag, request.highlightPostTag, reducer);
-    }
-
-    if (request.filterCommand) {
-      reducer = createFilterScoreReducer(request.filterCommand, reducer);
-    }
+    const transformer = [...request.resultsMiddlewares]
+      .reverse()
+      .reduce(
+        (acc, cur) => cur(acc, this.schemaService),
+        ((_, cur) => cur) as Transformer<T, Keys>
+      );
 
     const results = pipe(
       this.documentsProvider(),
-      map(document => ({ document, filterMatch: true, filterScore: 0, searchMatch: true, searchScore: 0, highlights: {}, features: {} })),
+      map(document => ({
+        document,
+        filterMatch: true,
+        filterScore: 0,
+        searchMatch: true,
+        searchScore: 0,
+        suggestions: {},
+        features: {},
+      })),
       reduce(reducer, { facets: {}, values: [] }),
     );
 
-    if (request.orderByCommand) {
-      results.values.sort(request.orderByCommand.apply);
-    }
-
-    return results;
+    return transformer(results, { value: [] });
   }
 }

@@ -1,6 +1,3 @@
-export function asIterable<T>(array: T[]): Iterable<T> {
-  return array;
-}
 export function toIterable<K extends PropertyKey, V>(obj: Record<K, V>): Iterable<[string, V]> {
   return Object.entries(obj);
 }
@@ -19,11 +16,11 @@ export function identity<T>(source: Iterable<T>): Iterable<T> {
   return source;
 }
 
-export function map<T, R>(selector: (value: T, index: number) => R, thisArg?: any) {
-  return function *(this: any, source: Iterable<T>): Iterable<R> {
+export function map<T, R>(selector: (value: T, index: number) => R) {
+  return function *(source: Iterable<T>): Iterable<R> {
     let index = 0;
     for (const value of source) {
-      yield selector.call(thisArg ?? this, value, index++);
+      yield selector(value, index++);
     }
   }
 }
@@ -91,9 +88,9 @@ export type Sortable = string | number | Date;
 export type SortStrategy<T> = (left: T, right: T) => -1 | 0 | 1;
 export function sort<T>(comparer: SortStrategy<T>) {
   return function (source: Iterable<T>): Iterable<T> {
-    const results = Array.from(source);
+    const results = toArray(source);
     results.sort(comparer);
-    return asIterable(results);
+    return results;
   }
 }
 function ascendingSortStrategy(l: Sortable, r: Sortable): -1 | 0 | 1 {
@@ -156,7 +153,7 @@ export function uniq<T, K>(keySelector?: (value: T) => K): (source: Iterable<T>)
   }
 }
 
-export function *flatten<T>(source: Iterable<Iterable<T>>): Iterable<T> {
+export function *flat<T>(source: Iterable<Iterable<T>>): Iterable<T> {
   for (const value of source) {
     for (const sub of value) {
       yield sub;

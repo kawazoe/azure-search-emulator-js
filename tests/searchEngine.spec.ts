@@ -262,7 +262,6 @@ describe('SearchEngine', () => {
       const results = sut.search({ search: 'fo|o', highlight: 'fullName' });
 
       const highlights = results.value[0]['@search.highlights'];
-      expect(highlights['fullName@odata.type']).toBe('Edm.String');
       expect(highlights['fullName']).toEqual(['<em>fo</em>o', 'fo<em>o</em>']);
     });
 
@@ -272,7 +271,6 @@ describe('SearchEngine', () => {
       const results = sut.search({ search: 'fo|o', highlight: 'fullName', highlightPostTag: 'POST', highlightPreTag: 'PRE' });
 
       const highlights = results.value[0]['@search.highlights'];
-      expect(highlights['fullName@odata.type']).toBe('Edm.String');
       expect(highlights['fullName']).toEqual(['PREfoPOSTo', 'foPREoPOST']);
     });
   });
