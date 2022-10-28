@@ -8,7 +8,8 @@ import {
   useOrderBy,
   useSearchScoring,
   useAutocompleteResult,
-  createAutocompleteSuggestionStrategy, useStripScore
+  createAutocompleteSuggestionStrategy,
+  useStripScore
 } from './searchBackend';
 
 export interface AutoCompleteRequest {

@@ -10,7 +10,9 @@ import {
   useLimiterMiddleware,
   useOrderBy,
   useSearchScoring,
-  createHighlightSuggestionStrategy, useSuggestResult, useStripScore
+  createHighlightSuggestionStrategy,
+  useSuggestResult,
+  useStripScore
 } from './searchBackend';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {

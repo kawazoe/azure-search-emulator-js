@@ -1,7 +1,6 @@
 import { _never } from '../lib/_never';
 import { CustomError } from '../lib/errors';
-import { pipe } from '../lib/functions';
-import { filter, flat, groupBy, isIterable, map, toArray } from '../lib/iterables';
+import { groupBy, isIterable } from '../lib/iterables';
 import * as Parsers from '../parsers';
 
 export type KeyFieldDefinition = {
@@ -219,11 +218,7 @@ const isWKTPoint = (value: string) => value.match(wktPointRegex)
 const isEdmComplexType = (subTypes: FieldDefinition[], value: unknown) =>
   typeof value === 'object' && validateComplexProp(subTypes, value as Record<string, unknown>);
 const isEdmCollection = (subType: FieldDefinition, value: unknown) =>
-  Array.isArray(value) && pipe(
-    value,
-    map(f => validateSingleProp(subType, f)),
-    flat
-  );
+  Array.isArray(value) && value.flatMap(f => validateSingleProp(subType, f));
 
 export class SchemaError extends CustomError {
   constructor(message: string, public json?: any) {
@@ -273,12 +268,9 @@ function validateSingleProp(field: FieldDefinition, value: unknown): ([] | [Fiel
         return [[[field], field.type]];
       }
 
-      return pipe(
-        result,
-        filter((r): r is [FieldDefinition[], string] => !!r.length),
-        map(([fs, m]) => [[field, ...fs], m] as [FieldDefinition[], string]),
-        toArray
-      );
+      return result
+        .filter((r): r is [FieldDefinition[], string] => !!r.length)
+        .map(([fs, m]) => [[field, ...fs], m] as [FieldDefinition[], string]);
     }
     default:
       return _never(type);
@@ -352,13 +344,9 @@ export function validateSchema<T extends object>(schema: Schema) {
     throw new SchemaError('Invalid schema. Missing KeyFieldDefinition.')
   }
 
-  const flatSchema: FlatSchema = toArray(flattenSchema(schema));
-  const duplicateFields = pipe(
-    flatSchema,
-    groupBy(([p]) => p),
-    filter(g => toArray(g.results).length > 1),
-    toArray,
-  );
+  const flatSchema: FlatSchema = Array.from(flattenSchema(schema));
+  const duplicateFields = groupBy(flatSchema, ([p]) => p)
+    .filter(g => g.results.length > 1);
 
   if (duplicateFields.length) {
     throw new SchemaError('Invalid schema. Duplicated fields', duplicateFields);
@@ -456,7 +444,7 @@ export class SchemaService<T extends object> {
       ...(request.selectCommand?.canApply(this.retrievableSchema) ?? []),
       ...(request.searchFieldsCommand?.canApply(this.searchableSchema) ?? []),
       ...(request.highlightCommand?.canApply(this.searchableSchema) ?? []),
-      ...(pipe(request.facetCommands ?? [], map(f => f.canApply(this.facetableSchema)), flat)),
+      ...((request.facetCommands ?? []).flatMap(f => f.canApply(this.facetableSchema))),
     ];
 
     if (requirementFailures.length) {

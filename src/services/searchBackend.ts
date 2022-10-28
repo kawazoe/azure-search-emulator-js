@@ -1,19 +1,4 @@
-import { pipe } from '../lib/functions';
-import {
-  filter,
-  flat,
-  identity,
-  map,
-  reduce,
-  sort,
-  sortBy,
-  sum,
-  take,
-  toArray,
-  toIterable,
-  toRecord,
-  uniq
-} from '../lib/iterables';
+import { sortBy, sum, uniq } from '../lib/iterables';
 import { getValue } from '../lib/objects';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 import { toODataQuery } from '../lib/odata';
@@ -52,12 +37,10 @@ export interface SearchDocumentMeta {
 
 export type SearchResult<T extends object> = SearchDocumentMeta & T;
 export interface AutocompleteResult {
-  '@search.score'?: number;
   text: string;
   queryPlusText: string;
 }
 export interface SuggestDocumentMeta {
-  '@search.score'?: number;
   '@search.text': string;
 }
 export type SuggestResult<T extends object> = SuggestDocumentMeta & T;
@@ -141,21 +124,15 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
         }
 
         const normalized = normalizeValue(value);
-        const matches = pipe(
-          normalized,
-          map(str => str.matchAll(searchRegex)),
-          flat,
-          // Ignore empty results
-          filter(m => !!m[0]),
-          // Ignore group results. Only look at the complete match
-          map((m) => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' } as SearchMatch)),
-          toArray,
-        );
+        const matches = normalized
+          .flatMap(str => Array.from(str.matchAll(searchRegex)))
+          .filter(m => !!m[0])
+          .map(m => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' } as SearchMatch));
 
         if (matches.length > 0) {
           cur.searchScore += sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
 
-          const uniqueMatches = pipe(matches, uniq(m => m.match), toArray);
+          const uniqueMatches = uniq(matches, m => m.match);
           const valueLength = sum(normalized.map(v => v.length));
           const matchedLength = sum(matches.map(t => t.match.length));
           const similarityScore = valueLength === 0
@@ -200,15 +177,12 @@ export function createHighlightSuggestionStrategy<T extends object>(options: {
         return [];
       }
 
-      return pipe(
-        matches,
-        map(m => {
-          const leftPadding = m.input.slice(Math.max(0, m.index - options.maxPadding), m.index);
-          const rightPadding = m.input.slice(m.index + m.match.length, m.index + m.match.length + options.maxPadding);
-          return `${leftPadding}${options.preTag}${m.match}${options.postTag}${rightPadding}`
-        }),
-        toArray,
-      );
+      return matches
+        .map(match => {
+          const leftPadding = match.input.slice(Math.max(0, match.index - options.maxPadding), match.index);
+          const rightPadding = match.input.slice(match.index + match.match.length, match.index + match.match.length + options.maxPadding);
+          return `${leftPadding}${options.preTag}${match.match}${options.postTag}${rightPadding}`
+        });
     };
   };
 }
@@ -218,7 +192,7 @@ export type AutocompleteModes = 'oneTerm' | 'twoTerms' | 'oneTermWithContext';
 const matchedPartSeparatorRegEx = /\s+/g;
 const suggestedPartSeparatorRegEx = /\s+|$/g;
 
-const autocompleteCutoffs:  Record<AutocompleteModes, (matches: RegExpMatchArray[]) => RegExpMatchArray | undefined> = {
+const autocompleteCutoffs: Record<AutocompleteModes, (matches: RegExpMatchArray[]) => RegExpMatchArray | undefined> = {
   oneTerm: (s) => s[0],
   twoTerms: (s) => s[1] ?? s[0],
   oneTermWithContext: () => _throw(new Error('oneTermWithContext autocompleteMode is not supported.')),
@@ -241,9 +215,8 @@ export function createAutocompleteSuggestionStrategy<T extends object>(options: 
         return [];
       }
 
-      return pipe(
-        matches,
-        map((match) => {
+      return matches
+        .map((match) => {
           const matchedPart = match.match;
 
           const matchedPartSeparators = Array.from(matchedPart.matchAll(matchedPartSeparatorRegEx));
@@ -263,9 +236,7 @@ export function createAutocompleteSuggestionStrategy<T extends object>(options: 
             text: `${lastMatchedWord}${suggestedWords}`,
             queryPlusText: `${options.preTag ?? ''}${matchedPart}${options.postTag ?? ''}${suggestedWords}`
           };
-        }),
-        toArray,
-      );
+        });
     };
   };
 }
@@ -311,23 +282,17 @@ export function useSearchResult<T extends object, Keys extends ODataSelect<T>>()
 
 export function useSuggestResult<T extends object, Keys extends ODataSelect<T>>(): DocumentMiddleware<T, Keys> {
   return (next) => (acc, cur) => {
-    const suggestions = pipe(
-      toIterable(cur.suggestions),
-      sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc),
-      map(([, suggestions]) => pipe(
-        suggestions,
-        map((s) => ({
+    const suggestions = Object.entries(cur.suggestions)
+      .sort(sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc))
+      .flatMap(([, suggestions]) => suggestions
+        .map((s) => ({
           '@search.score': cur.filterScore + cur.searchScore,
           '@search.text': `${s}`,
           ...cur.selected ?? cur.document,
-        })),
-      )),
-      flat,
-    );
+        } as SuggestResult<ODataSelectResult<T, Keys>>)),
+      );
 
-    for (const suggestion of suggestions) {
-      acc.values.push(suggestion as unknown as SuggestResult<ODataSelectResult<T, Keys>>)
-    }
+    acc.values.push(...suggestions);
 
     return next(acc, cur);
   };
@@ -335,23 +300,19 @@ export function useSuggestResult<T extends object, Keys extends ODataSelect<T>>(
 
 export function useAutocompleteResult<T extends object, Keys extends ODataSelect<T>>(): DocumentMiddleware<T, Keys> {
   return (next) => (acc, cur) => {
-    const suggestions = pipe(
-      toIterable(cur.suggestions as Record<string, AutocompleteResult[]>),
-      sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc),
-      map(([, suggestions]) => pipe(
-        suggestions,
-        map(result => ({
-          '@search.score': cur.filterScore + cur.searchScore,
-          ...result,
-        })),
-        uniq(r => r.queryPlusText),
-      )),
-      flat,
-    );
+    const suggestions = Object.entries(cur.suggestions)
+      .sort(sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc))
+      .flatMap(([, suggestions]) => {
+        const results = suggestions
+          .map(result => ({
+            '@search.score': cur.filterScore + cur.searchScore,
+            ...result as AutocompleteResult,
+          }));
 
-    for (const suggestion of suggestions) {
-      acc.values.push(suggestion as unknown as AutocompleteResult)
-    }
+        return uniq(results, r => r.queryPlusText);
+      });
+
+    acc.values.push(...suggestions);
 
     return next(acc, cur);
   };
@@ -402,21 +363,18 @@ export function useCoverage<T extends object, Keys extends ODataSelect<T>>(): Re
 export function useFacetTransformation<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
   return (next) => {
     return (reduction, results) => {
-      results['@search.facets'] = pipe(
-        toIterable(reduction.facets),
-        map(([key, facet]): [string, SearchFacetBase[]] => [
+      const foo = Object.entries(reduction.facets)
+        .map(([key, facet]): [string, SearchFacetBase[]] => [
           key,
-          pipe(
-            toIterable(facet.results),
-            facet.params.sort ? sort(facet.params.sort) : identity,
-            take(facet.params.count),
+          (facet.params.sort
+            ? Object.entries(facet.results).sort(facet.params.sort)
+            : Object.entries(facet.results))
+            .slice(0, facet.params.count)
             // TODO: Add support for ranged facets
-            map(([value, count]) => ({value, count} as SearchFacetValue)),
-            toArray
-          ),
-        ]),
-        toRecord,
-      );
+            .map(([value, count]) => ({value, count} as SearchFacetValue)),
+        ]);
+
+      results['@search.facets'] = Object.fromEntries(foo);
 
       return next(reduction, results);
     };
@@ -456,11 +414,7 @@ export function usePagingMiddleware<T extends object, Keys extends ODataSelect<T
 export function useLimiterMiddleware<T extends object, Keys extends ODataSelect<T>>(top: number): ResultsMiddleware<T, Keys> {
   return (next) => {
     return (reduction, results) => {
-      results.value = pipe(
-        reduction.values,
-        take(top),
-        toArray,
-      );
+      results.value = reduction.values.slice(0, top);
 
       return next(reduction, results);
     };
@@ -470,11 +424,7 @@ export function useLimiterMiddleware<T extends object, Keys extends ODataSelect<
 export function useStripScore<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
   return (next) => {
     return (reduction, results) => {
-      results.value = pipe(
-        results.value,
-        map(({['@search.score']: score, ...rest}) => rest as unknown as typeof results.value[number]),
-        toArray,
-      );
+      results.value = (results.value as any[]).map(({['@search.score']: score, ...rest}) => rest) as typeof results.value;
 
       return next(reduction, results);
     };
@@ -484,7 +434,7 @@ export function useStripScore<T extends object, Keys extends ODataSelect<T>>(): 
 export class SearchBackend<T extends object> {
   constructor(
     private readonly schemaService: SchemaService<T>,
-    private readonly documentsProvider: () => Iterable<T>,
+    private readonly documentsProvider: () => T[],
   ) {
   }
 
@@ -506,9 +456,8 @@ export class SearchBackend<T extends object> {
         ((_, cur) => cur) as Transformer<T, Keys>
       );
 
-    const results = pipe(
-      this.documentsProvider(),
-      map(document => ({
+    const results = this.documentsProvider()
+      .map(document => ({
         document,
         filterMatch: true,
         filterScore: 0,
@@ -516,9 +465,8 @@ export class SearchBackend<T extends object> {
         searchScore: 0,
         suggestions: {},
         features: {},
-      })),
-      reduce(reducer, { facets: {}, values: [] }),
-    );
+      }))
+      .reduce(reducer, { facets: {}, values: [] });
 
     return transformer(results, { value: [] });
   }

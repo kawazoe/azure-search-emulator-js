@@ -163,9 +163,7 @@ demoing, your application.
 
 ## What's next
 - Scoring profiles.
-- Some big refactoring to extract a search backend from the query engines.
-- Major speed optimizations.
-- Support for queries made by the official client.
+- Validation against queries made by the official client.
 - Support storing/loading the index to/from disk when running on the server.
 - Switch the backend to a full text search engine with Lucene syntax.
 - Maybe more features?

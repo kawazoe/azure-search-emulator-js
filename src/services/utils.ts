@@ -1,6 +1,3 @@
-import { pipe } from '../lib/functions';
-import { flat, map, toArray } from '../lib/iterables';
-
 /**
  * When handling data from documents, we can look through:
  * string,
@@ -13,13 +10,9 @@ import { flat, map, toArray } from '../lib/iterables';
 export function normalizeValue(value: unknown): string[] {
   function _normalizeValue(val: unknown) {
     return Array.isArray(val)
-      ? pipe(
-        val as unknown[],
-        map(c => normalizeValue(c)),
-        flat,
-      )
+      ? (val as unknown[]).flatMap(c => normalizeValue(c))
       : [`${val}`]
   }
 
-  return toArray(_normalizeValue(value));
+  return Array.from(_normalizeValue(value));
 }
