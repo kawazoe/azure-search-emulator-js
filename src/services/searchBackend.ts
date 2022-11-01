@@ -62,10 +62,7 @@ export type Reducer<T extends object, Keys extends ODataSelect<T>> = (
   current: {
     document: T,
     selected?: ODataSelectResult<T, Keys>,
-    filterMatch: boolean,
-    filterScore: number,
-    searchMatch: boolean,
-    searchScore: number,
+    score: number,
     suggestions: SearchSuggestions,
     features: SearchFeatures,
   }
@@ -81,12 +78,13 @@ export function useFilterScoring<T extends object, Keys extends ODataSelect<T>>(
     schemaService.assertCommands({filterCommand});
 
     return (acc, cur) => {
-      cur.filterScore = filterCommand.apply(cur.document);
-      cur.filterMatch = cur.filterScore > 0;
+      const score = filterCommand.apply(cur.document);
 
-      if (!cur.filterMatch) {
+      if (score <= 0) {
         return acc;
       }
+
+      cur.score += score;
 
       return next(acc, cur);
     };
@@ -115,6 +113,10 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
     const suggestionStrategy = options.suggestionStrategy(schemaService);
 
     return (acc, cur) => {
+      let score = 0;
+      let suggestions: SearchSuggestions = {};
+      let features: SearchFeatures = {};
+
       // TODO: Replace tuple with object for readability
       for (const searchable of searchables) {
         const value = getValue(cur.document, searchable[1]);
@@ -129,31 +131,32 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
           .filter(m => !!m[0])
           .map(m => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' } as SearchMatch));
 
-        if (matches.length > 0) {
-          cur.searchScore += sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
+        if (matches.length <= 0) {
+          continue;
+        }
 
-          const uniqueMatches = uniq(matches, m => m.match);
-          const valueLength = sum(normalized.map(v => v.length));
-          const matchedLength = sum(matches.map(t => t.match.length));
-          const similarityScore = valueLength === 0
-            ? 0
-            : (matchedLength / valueLength);
+        const uniqueMatches = uniq(matches, m => m.match);
+        const valueLength = sum(normalized.map(v => v.length));
+        const matchedLength = sum(matches.map(t => t.match.length));
+        const similarityScore = valueLength === 0 ? 0 : (matchedLength / valueLength);
 
-          cur.suggestions[searchable[0]] = suggestionStrategy(searchable, uniqueMatches);
+        score += sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
 
-          cur.features[searchable[0]] = {
-            uniqueTokenMatches: uniqueMatches.length,
-            similarityScore,
-            termFrequency: matches.length,
-          }
+        suggestions[searchable[0]] = suggestionStrategy(searchable, uniqueMatches);
+        features[searchable[0]] = {
+          uniqueTokenMatches: uniqueMatches.length,
+          similarityScore,
+          termFrequency: matches.length,
         }
       }
 
-      cur.searchMatch = cur.searchScore > 0;
-
-      if (!cur.searchMatch) {
+      if (score <= 0) {
         return acc;
       }
+
+      cur.score += score;
+      cur.suggestions = suggestions;
+      cur.features = features;
 
       return next(acc, cur);
     };
@@ -271,7 +274,7 @@ export function useSearchResult<T extends object, Keys extends ODataSelect<T>>()
   return (next) => (acc, cur) => {
     acc.values.push({
       ...cur.selected ?? cur.document,
-      '@search.score': cur.filterScore + cur.searchScore,
+      '@search.score': cur.score,
       '@search.highlights': cur.suggestions,
       '@search.features': cur.features,
     } as unknown as SearchResult<ODataSelectResult<T, Keys>>);
@@ -286,7 +289,7 @@ export function useSuggestResult<T extends object, Keys extends ODataSelect<T>>(
       .sort(sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc))
       .flatMap(([, suggestions]) => suggestions
         .map((s) => ({
-          '@search.score': cur.filterScore + cur.searchScore,
+          '@search.score': cur.score,
           '@search.text': `${s}`,
           ...cur.selected ?? cur.document,
         } as SuggestResult<ODataSelectResult<T, Keys>>)),
@@ -305,7 +308,7 @@ export function useAutocompleteResult<T extends object, Keys extends ODataSelect
       .flatMap(([, suggestions]) => {
         const results = suggestions
           .map(result => ({
-            '@search.score': cur.filterScore + cur.searchScore,
+            '@search.score': cur.score,
             ...result as AutocompleteResult,
           }));
 
@@ -459,10 +462,7 @@ export class SearchBackend<T extends object> {
     const results = this.documentsProvider()
       .map(document => ({
         document,
-        filterMatch: true,
-        filterScore: 0,
-        searchMatch: true,
-        searchScore: 0,
+        score: 0,
         suggestions: {},
         features: {},
       }))
