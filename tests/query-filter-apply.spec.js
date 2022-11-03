@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { filter as parser } from '../src/parsers';
+import { makeGeoJsonPoint } from '../src/lib/geoPoints';
 
 describe('query-select', () => {
   describe('apply', () => {
@@ -57,6 +58,54 @@ describe('query-select', () => {
       "foo/all(v:v eq 0)",
       [{ foo: [0, 0, 0] }, { foo: [0, 1, 0] }],
       [[3, { foo: [0, 0, 0] }], [0, { foo: [0, 1, 0] }]]
+    )
+    itShouldFilter(
+      "geo.distance(foo, geography'POINT(2.0 2.0)') gt 157",
+      [
+        { foo: makeGeoJsonPoint(0, 0) },
+        { foo: makeGeoJsonPoint(1, 1) },
+        { foo: makeGeoJsonPoint(2, 2) },
+        { foo: makeGeoJsonPoint(3, 2) },
+        { foo: makeGeoJsonPoint(2, 3) },
+        { foo: makeGeoJsonPoint(3, 3) },
+      ],
+      [
+        [1, { foo: makeGeoJsonPoint(0, 0) }],
+        [1, { foo: makeGeoJsonPoint(1, 1) }],
+        [0, { foo: makeGeoJsonPoint(2, 2) }],
+        [0, { foo: makeGeoJsonPoint(3, 2) }],
+        [0, { foo: makeGeoJsonPoint(2, 3) }],
+        [1, { foo: makeGeoJsonPoint(3, 3) }],
+      ]
+    )
+    itShouldFilter(
+      "geo.intersects(foo, geography'POLYGON((1.0 1.0, 1.0 -1.0, -1.0 -1.0, -1.0 1.0, 1.0 1.0))')",
+      [
+        { foo: makeGeoJsonPoint(0, 0) },
+        { foo: makeGeoJsonPoint(0.99999, 0.99999) },
+        { foo: makeGeoJsonPoint(0.99999, -0.99999) },
+        { foo: makeGeoJsonPoint(-0.99999, -0.99999) },
+        { foo: makeGeoJsonPoint(-0.99999, 0.99999) },
+        { foo: makeGeoJsonPoint(0.99999, 1.00001) },
+        { foo: makeGeoJsonPoint(1.00001, 1.00001) },
+        { foo: makeGeoJsonPoint(1.00001, 0.99999) },
+        { foo: makeGeoJsonPoint(-0.99999, -1.00001) },
+        { foo: makeGeoJsonPoint(-1.00001, -1.00001) },
+        { foo: makeGeoJsonPoint(-1.00001, -0.99999) },
+      ],
+      [
+        [1, { foo: makeGeoJsonPoint(0, 0) }],
+        [1, { foo: makeGeoJsonPoint(0.99999, 0.99999) }],
+        [1, { foo: makeGeoJsonPoint(0.99999, -0.99999) }],
+        [1, { foo: makeGeoJsonPoint(-0.99999, -0.99999) }],
+        [1, { foo: makeGeoJsonPoint(-0.99999, 0.99999) }],
+        [0, { foo: makeGeoJsonPoint(0.99999, 1.00001) }],
+        [0, { foo: makeGeoJsonPoint(1.00001, 1.00001) }],
+        [0, { foo: makeGeoJsonPoint(1.00001, 0.99999) }],
+        [0, { foo: makeGeoJsonPoint(-0.99999, -1.00001) }],
+        [0, { foo: makeGeoJsonPoint(-1.00001, -1.00001) }],
+        [0, { foo: makeGeoJsonPoint(-1.00001, -0.99999) }],
+      ]
     )
     itShouldFilter(
       "search.ismatchscoring('z', 'foo')",

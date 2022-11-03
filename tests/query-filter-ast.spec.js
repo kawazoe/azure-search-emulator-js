@@ -31,6 +31,8 @@ describe('query-select', () => {
       });
     }
 
+    const makeGeoPoint = (lon, lat) => ({ lon, lat });
+
     const fieldPathAst = (...value) => ({ type: "FIELD_PATH", value });
     const identifierAst = (value) => ({ type: "IDENTIFIER", value });
     const comparisonAst = (left, op, right) => ({ type: "COMPARISON", left, op, right });
@@ -43,6 +45,8 @@ describe('query-select', () => {
     const negInfAst = () => ({ type: "NEGATIVE_INFINITY", value: Number.NEGATIVE_INFINITY });
     const booleanAst = (value) => ({ type: "BOOLEAN", value });
     const nullAst = () => ({ type: "NULL", value: null });
+    const geoPointAst = (point) => ({ type: 'GEO_POINT', ...point });
+    const geoPolygonAst = (...points) => ({ type: 'GEO_POLYGON', points: [...points, points[0]] });
     const andExpressionAst = (left, right) => ({ type: "AND_EXPRESSION", left, right });
     const orExpressionAst = (left, right) => ({ type: "OR_EXPRESSION", left, right });
     const notExpressionAst = (value) => ({ type: "NOT_EXPRESSION", value });
@@ -55,6 +59,8 @@ describe('query-select', () => {
       }
       return ({ type: "ANY_FILTER", target });
     };
+    const geoDistanceAst = (from, to) => ({ type: "FN_GEO_DISTANCE", from, to });
+    const geoIntersectsAst = (point, polygon) => ({ type: "FN_GEO_INTERSECTS", point, polygon });
     const searchInAst = (variable, valueList, delimiter) => {
       if (delimiter) {
         return ({ type: "FN_SEARCH_IN", variable, valueList, delimiter });
@@ -247,6 +253,16 @@ describe('query-select', () => {
       )],
     ];
     const functions = [
+      ["geo.distance(v, geography'POINT(1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(1, 2))), "eq", integerAst(0))],
+      ["geo.distance(v, geography'POINT(-1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(-1, 2))), "eq", integerAst(0))],
+      ["geo.distance(v, geography'POINT(1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(1, -2))), "eq", integerAst(0))],
+      ["geo.distance(v, geography'POINT(-1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(-1, -2))), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(1.0 2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(1, 2)), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(-1.0 2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(-1, 2)), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(1.0 -2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(1, -2)), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(-1.0 -2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(-1, -2)), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.intersects(v, geography'POLYGON((1.0 2.0, 3.0 4.0, 5.0 6.0, 1.0 2.0))')", geoIntersectsAst(identifierAst("v"), geoPolygonAst(makeGeoPoint(1, 2), makeGeoPoint(3, 4), makeGeoPoint(5, 6)))],
+      ["geo.intersects(v, geography'POLYGON((1.0 2.0, 3.0 4.0, 5.0 6.0, 7.0 8.0, 1.0 2.0))')", geoIntersectsAst(identifierAst("v"), geoPolygonAst(makeGeoPoint(1, 2), makeGeoPoint(3, 4), makeGeoPoint(5, 6), makeGeoPoint(7, 8)))],
       ["search.in(v, '1, 2, 3')", searchInAst(identifierAst("v"), stringAst("1, 2, 3"))],
       ["search.in(v, '1, 2, 3', ', ')", searchInAst(identifierAst("v"), stringAst("1, 2, 3"), stringAst(", "))],
       ["search.ismatch('q')", searchIsMatchAst(stringAst("q"))],

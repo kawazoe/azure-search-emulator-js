@@ -6,7 +6,6 @@ import dts from 'vite-plugin-dts';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig({
-  resolve: { alias: { '@': resolve(__dirname, './src') } },
   plugins: [
     dts({ insertTypesEntry: true, skipDiagnostics: false, logDiagnostics: true }),
     viteStaticCopy({

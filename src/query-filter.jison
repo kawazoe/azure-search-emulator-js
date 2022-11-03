@@ -6,6 +6,16 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 
 %%
 
+"geo.distance"                             { return 'FN_GEO_DISTANCE' }
+"geo.intersects"                            { return 'FN_GEO_INTERSECTS' }
+"search.in"                                { return 'FN_SEARCH_IN' }
+"search.ismatchscoring"                    { return 'FN_SEARCH_ISMATCHSCORING' }
+"search.ismatch"                           { return 'FN_SEARCH_ISMATCH' }
+
+"geography'POINT("                         { return 'MAKE_GEO_POINT_OPEN' }
+"geography'POLYGON("                       { return 'MAKE_GEO_POLYGON_OPEN' }
+")'"                                       { return 'MAKE_GEO_CLOSE' }
+
 "true"                                     { return 'TRUE' }
 "false"                                    { return 'FALSE' }
 "not"                                      { return 'NOT' }
@@ -23,10 +33,6 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 "NaN"                                      { return 'NOT_A_NUMBER_LITERAL' }
 "-INF"                                     { return 'NEGATIVE_INFINITY_LITERAL' }
 "INF"                                      { return 'POSITIVE_INFINITY_LITERAL' }
-
-"search.in"                                { return 'FN_SEARCH_IN' }
-"search.ismatchscoring"                    { return 'FN_SEARCH_ISMATCHSCORING' }
-"search.ismatch"                           { return 'FN_SEARCH_ISMATCH' }
 
 (\'full\')|(\'simple\')                    { return 'QUERY_TYPE' }
 (\'any\')|(\'all\')                        { return 'SEARCH_MODE' }
@@ -53,12 +59,13 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 
 /lex
 
+%token FN_GEO_DISTANCE FN_GEO_INTERSECTS FN_SEARCH_IN FN_SEARCH_ISMATCHSCORING FN_SEARCH_ISMATCH
+%token MAKE_GEO_POINT_OPEN MAKE_GEO_POLYGON_OPEN MAKE_GEO_CLOSE
 %token TRUE FALSE
 %right NOT
 %left AND OR
 %left GREATER_THAN LOWER_THAN GREATER_OR_EQUAL LOWER_OR_EQUAL EQUAL NOT_EQUAL
 %token NULL_LITERAL NOT_A_NUMBER_LITERAL NEGATIVE_INFINITY_LITERAL POSITIVE_INFINITY_LITERAL
-%token FN_SEARCH_IN FN_SEARCH_ISMATCHSCORING FN_SEARCH_ISMATCH
 %token QUERY_TYPE SEARCH_MODE
 %token IDENTIFIER FLOAT_LITERAL INTEGER_LITERAL STRING_LITERAL
 %token FP_ALL FP_ANY
@@ -263,8 +270,8 @@ comparison_operator
     | NOT_EQUAL         { $$ = { kind: $1, apply: (l, r) => l != r ? 1 : 0 } }
     ;
 variable_or_function
-    : variable          { $$ = $1 }
-//     | function_call
+    : variable
+    | function_call
     ;
 
 /* Rules for constants and literals */
@@ -302,36 +309,70 @@ null_literal
 
 /* Rules for functions */
 
-// function_call
-//     : geo_distance_call
-//     | boolean_function_call
-//     ;
-// geo_distance_call
-//     : 'geo.distance(' variable ',' geo_point ')'
-//     | 'geo.distance(' geo_point ',' variable ')'
-//     ;
-// geo_point
-//     : "geography'POINT(" lon_lat ")'"
-//     ;
-// lon_lat
-//     : float_literal ' ' float_literal
-//     ;
+function_call
+    : geo_distance_call
+    | boolean_function_call
+    ;
+geo_distance_call
+    : FN_GEO_DISTANCE GROUP_OPEN variable LIST_SEPARATOR geo_point GROUP_CLOSE
+    {
+        //
+        {
+        const { fn_geo_distance } = yy.fns;
+        const from = $3;
+        const to = $5;
+        const canApply = from.canApply;
+        const apply = (input) => fn_geo_distance(input, from, to);
+        $$ = { type: "FN_GEO_DISTANCE", from, to, canApply, apply };
+        }
+    }
+    | FN_GEO_DISTANCE GROUP_OPEN geo_point LIST_SEPARATOR variable GROUP_CLOSE
+    {
+        //
+        {
+        const { fn_geo_distance } = yy.fns;
+        const from = $3;
+        const to = $5;
+        const canApply = to.canApply;
+        const apply = (input) => fn_geo_distance(input, to, from);
+        $$ = { type: "FN_GEO_DISTANCE", from, to, canApply, apply };
+        }
+    }
+    ;
+geo_point
+    : MAKE_GEO_POINT_OPEN lon_lat MAKE_GEO_CLOSE       { $$ = { type: "GEO_POINT", ...$2 } }
+    ;
+lon_lat
+    : float_literal float_literal       { $$ = { lon: $1.value, lat: $2.value } }
+    ;
 boolean_function_call
-//     : geo_intersects_call
-    : search_in_call
+    : geo_intersects_call
+    | search_in_call
     | search_is_match_call
     ;
-// geo_intersects_call
-//     : 'geo.intersects(' variable ',' geo_polygon ')'
-//     ;
-// /* You need at least four points to form a polygon, where the first and
-// last points are the same. */
-// geo_polygon
-//     : "geography'POLYGON((" lon_lat ',' lon_lat ',' lon_lat ',' lon_lat_list "))'"
-//     ;
-// lon_lat_list
-//     : lon_lat(',' lon_lat)*
-//     ;
+geo_intersects_call
+    : FN_GEO_INTERSECTS GROUP_OPEN variable LIST_SEPARATOR geo_polygon GROUP_CLOSE
+    {
+        //
+        {
+        const { fn_geo_intersects } = yy.fns;
+        const point = $3;
+        const polygon = $5;
+        const canApply = point.canApply;
+        const apply = (input) => fn_geo_intersects(input, point, polygon.points) ? 1 : 0;
+        $$ = { type: "FN_GEO_INTERSECTS", point, polygon, canApply, apply };
+        }
+    }
+    ;
+/* You need at least four points to form a polygon, where the first and
+   last points are the same. */
+geo_polygon
+    : MAKE_GEO_POLYGON_OPEN GROUP_OPEN lon_lat LIST_SEPARATOR lon_lat LIST_SEPARATOR lon_lat LIST_SEPARATOR lon_lat_list GROUP_CLOSE MAKE_GEO_CLOSE
+    { $$ = { type: "GEO_POLYGON", points: [$3, $5, $7, ...$9] } }
+    ;
+lon_lat_list
+    : lon_lat (LIST_SEPARATOR lon_lat)*     { $$ = [$1, ...$2.map(([sep, clause]) => clause)] }
+    ;
 search_in_call
     : FN_SEARCH_IN GROUP_OPEN search_in_parameters GROUP_CLOSE
     { $$ = { type: "FN_SEARCH_IN", ...$3 } }

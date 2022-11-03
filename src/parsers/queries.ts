@@ -19,6 +19,13 @@ import type {
 import { FlatSchema, matchSchemaRequirement, SchemaMatcherRequirements } from '../services';
 import { normalizeValue } from '../services/utils';
 import { toPaths } from './asts';
+import {
+  calculateDistance,
+  intersects,
+  isGeoJsonPoint,
+  makeGeoPoint,
+  makeGeoPolygon
+} from '../lib/geoPoints';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
@@ -56,6 +63,36 @@ const dependencies = {
   matchSchema,
 };
 
+function fn_geo_distance<T>(
+  input: T,
+  fromVariable: { value: unknown, apply: (input: T) => unknown },
+  toPoint: { lon: number, lat: number },
+) {
+  const from = fromVariable.apply(input);
+  if (!isGeoJsonPoint(from)) {
+    throw new Error(`Unsupported operation. Expected ${fromVariable.value} to be a GeoJSONPoint but got ${JSON.stringify(from)}`);
+  }
+
+  return calculateDistance(
+    makeGeoPoint(from.coordinates[0], from.coordinates[1]),
+    makeGeoPoint(toPoint.lon, toPoint.lat),
+  ) / 1000;
+}
+function fn_geo_intersects<T>(
+  input: T,
+  pointVariable: { value: unknown, apply: (input: T) => unknown },
+  polygon: { lon: number, lat: number }[],
+) {
+  const point = pointVariable.apply(input);
+  if (!(isGeoJsonPoint(point))) {
+    throw new Error(`Unsupported operation. Expected ${pointVariable.value} to be a GeoJSONPoint but got ${JSON.stringify(point)}`);
+  }
+
+  return intersects(
+    makeGeoPoint(point.coordinates[0], point.coordinates[1]),
+    makeGeoPolygon(...polygon.map(p => makeGeoPoint(p.lon, p.lat))),
+  );
+}
 function fn_search_score(input: Record<string, unknown>) {
   return input['@search.score'];
 }
@@ -63,7 +100,7 @@ function fn_search_in<T>(
   input: T,
   variable: { value: unknown, apply: (input: T) => unknown },
   valueList: string,
-  delimiter?: string
+  delimiter?: string,
 ) {
   const haystack = variable.apply(input);
   if (typeof haystack !== 'string') {
@@ -132,7 +169,7 @@ export type FilterParser = Parser<FilterParserResult>;
 export const filter: FilterParser = {
   parse: (input: string) => {
     const ast = {} as FilterAst & FilterActions;
-    _filter.parse(input, ast, dependencies, { fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
+    _filter.parse(input, ast, dependencies, { fn_geo_distance, fn_geo_intersects, fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
     return {
       ...ast,
       canApply: (schema: FlatSchema) => ast.canApply(schema, 'filterable'),

@@ -277,13 +277,13 @@ describe('Scorer', () => {
             'default',
           );
 
-          const far = makeGeoJsonPoint(46.80772501699039, -71.20688089878229);
-          const d100k200m = makeGeoJsonPoint(46.07725335123803, -72.55136962206396);
-          const d100k = makeGeoJsonPoint(46.07613738135688, -72.55341125057537);
-          const d50k = makeGeoJsonPoint(45.79361107476408, -73.05641103879233);
-          const rp = makeGeoJsonPoint(45.50890239725307, -73.5543295037799);
+          const far = makeGeoJsonPoint(-71.20688089878229, 46.80772501699039);
+          const d100k200m = makeGeoJsonPoint(-72.55136962206396, 46.07725335123803);
+          const d100k = makeGeoJsonPoint(-72.55341125057537, 46.07613738135688);
+          const d50k = makeGeoJsonPoint(-73.05641549253124, 45.79361063088562);
+          const rp = makeGeoJsonPoint(-73.5543295037799, 45.50890239725307);
 
-          const strats = sut.getScoringStrategies(null, ['rp-45.50890239725307, -73.5543295037799']);
+          const strats = sut.getScoringStrategies(null, ['rp--73.5543295037799, 45.50890239725307']);
 
           expect(strats['addresses/location']?.(far, 3)).toBeCloseTo(3, 4);
           expect(strats['addresses/location']?.(d100k200m, 3)).toBeCloseTo(3, 4);
