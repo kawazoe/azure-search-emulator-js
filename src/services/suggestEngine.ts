@@ -63,6 +63,7 @@ export class SuggestEngine<T extends object> {
           postTag: request.highlightPostTag ?? '',
           maxPadding: 30,
         }),
+        scoringStrategies: {},
       })] : []),
       useSelect<T, Keys>(request.select ?? [this.keyFieldProvider().name as Keys]),
       useSuggestResult<T, Keys>(),

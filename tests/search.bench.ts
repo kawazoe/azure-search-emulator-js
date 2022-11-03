@@ -1,15 +1,21 @@
 import { bench, describe } from 'vitest';
-import { AutocompleteEngine, SearchBackend, SearchEngine, SuggestEngine } from '../src';
-import { People, peopleSchemaKey, peopleSchemaService, peopleSuggesterProvider } from './lib/mockSchema';
+
+import { AutocompleteEngine, Scorer, SearchBackend, SearchEngine, SuggestEngine } from '../src';
+
+import type { People } from './lib/mockSchema';
+import { peopleSchemaKey, peopleSchemaService, peopleSuggesterProvider } from './lib/mockSchema';
 
 function createSearchEngine() {
   const documents = Array.from(new Array(1234))
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
 
-  return new SearchEngine(new SearchBackend<People>(
-    peopleSchemaService,
-    () => documents
-  ));
+  return new SearchEngine(
+    new SearchBackend<People>(
+      peopleSchemaService,
+      () => documents
+    ),
+    new Scorer([], null),
+  );
 }
 
 function createSuggestEngine() {

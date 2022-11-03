@@ -63,11 +63,112 @@ export function uniq<T, K>(source: T[], keySelector?: (value: T) => K): T[] {
   return results;
 }
 
+const joinSkip = Symbol('join.skip');
+export function join<L, R, Result, LK = keyof L, RK = keyof R>(
+  left: L[],
+  right: R[],
+  leftKeySelector: (v: L) => LK,
+  rightKeySelector: (v: R) => RK,
+  resultSelector: (l: L | null, r: R | null) => (Result | typeof join.skip)
+): Result[] {
+  const rightMap: Map<RK | LK, R[] | null> = right
+    .reduce(
+      (acc, cur) => {
+        const rightCandidate = rightKeySelector(cur);
+
+        let group = acc.get(rightCandidate);
+        if (!group) {
+          group = [];
+          acc.set(rightCandidate, group);
+        }
+
+        group.push(cur);
+
+        return acc;
+      },
+      new Map(),
+    );
+  const leftResults = left
+    .reduce(
+      (acc, cur) => {
+        const key = leftKeySelector(cur);
+        const rightCandidates = rightMap.get(key);
+
+        if (rightCandidates) {
+          for (const rightCandidate of rightCandidates) {
+            const result = resultSelector(cur, rightCandidate);
+
+            if (result !== join.skip) {
+              acc.push(result);
+            }
+          }
+
+          rightMap.set(key, null);
+        } else {
+          const result = resultSelector(cur, null);
+
+          if (result !== join.skip) {
+            acc.push(result);
+          }
+        }
+
+        return acc;
+      },
+      [] as Result[],
+    );
+  return Array.from(rightMap)
+    .reduce(
+      (acc, cur) => {
+        const rightCandidates = cur[1];
+
+        if (rightCandidates) {
+          for (const rightCandidate of rightCandidates) {
+            const result = resultSelector(null, rightCandidate);
+
+            if (result !== join.skip) {
+              acc.push(result);
+            }
+          }
+        }
+
+        return acc;
+      },
+      leftResults
+    );
+}
+join.skip = joinSkip;
 
 export function sum(source: Iterable<number>): number {
   let acc = 0;
   for (const n of source) {
     acc += n;
+  }
+  return acc;
+}
+export function average(source: Iterable<number>): number {
+  let acc = 0;
+  let count = 0;
+  for (const n of source) {
+    acc += n;
+    count++;
+  }
+  return acc / count;
+}
+export function min(source: Iterable<number>): number {
+  let acc = Number.MAX_SAFE_INTEGER;
+  for (const n of source) {
+    if (n < acc) {
+      acc = n;
+    }
+  }
+  return acc;
+}
+export function max(source: Iterable<number>): number {
+  let acc = Number.MIN_SAFE_INTEGER;
+  for (const n of source) {
+    if (n > acc) {
+      acc = n;
+    }
   }
   return acc;
 }

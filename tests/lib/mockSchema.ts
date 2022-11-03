@@ -1,5 +1,7 @@
 import { KeyFieldDefinition, Schema, SchemaService, Suggester } from '../../src';
+
 import { _throw } from '../../src/lib/_throw';
+import { GeoJSONPoint } from '../../src/lib/geoPoints';
 
 export type People = {
   id: string,
@@ -7,6 +9,7 @@ export type People = {
   addresses?: {
     parts?: string,
     kind?: string,
+    location?: GeoJSONPoint
   }[],
   phones?: string[],
   ratio?: number,
@@ -25,6 +28,7 @@ export const peopleSchema: Schema = [
   { type: 'Collection(Edm.ComplexType)', name: 'addresses', fields: [
       { type: 'Edm.String', name: 'parts' },
       { type: 'Edm.String', name: 'kind' },
+      { type: 'Edm.GeographyPoint', name: 'location' },
     ]},
   { type: 'Collection(Edm.String)', name: 'phones' },
   { type: 'Edm.Double', name: 'ratio' },

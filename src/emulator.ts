@@ -12,22 +12,34 @@ import type {
   SuggestRequest,
   AutoCompleteRequest,
   AutoCompleteDocumentResult,
-  Schema
+  Schema,
+  ScoringProfile
 } from './services';
-import { DataStore, SearchEngine, SuggestEngine, AutocompleteEngine, SchemaService, SearchBackend } from './services';
+import {
+  DataStore,
+  SearchEngine,
+  SuggestEngine,
+  AutocompleteEngine,
+  SchemaService,
+  SearchBackend,
+  Scorer
+} from './services';
 
 export class Index<T extends object> {
-  public static createIndex<T extends object>(
+  public static createIndex<T extends object>(options: {
     name: string,
     schema: Schema,
-    suggesters: Suggester[],
-  ) {
-    const schemaService = SchemaService.createSchemaService<T>(schema);
+    suggesters?: Suggester[],
+    scoringProfiles?: ScoringProfile<T>[],
+    defaultScoringProfile?: string,
+  }) {
+    const schemaService = SchemaService.createSchemaService<T>(options.schema);
 
     const dataStore = new DataStore<T>(schemaService);
-    const searchBackend = new SearchBackend<T>(schemaService, () => dataStore.documents)
-    const searchEngine = new SearchEngine<T>(searchBackend);
-    const suggesterProvider = (name: string) => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
+    const scorer = new Scorer<T>(options.scoringProfiles ?? [], options.defaultScoringProfile ?? null);
+    const searchBackend = new SearchBackend<T>(schemaService, () => dataStore.documents);
+    const searchEngine = new SearchEngine<T>(searchBackend, scorer);
+    const suggesterProvider = (name: string) => options.suggesters?.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
     const suggestEngine = new SuggestEngine<T>(
       searchBackend,
       () => schemaService.keyField,
@@ -38,7 +50,7 @@ export class Index<T extends object> {
       suggesterProvider,
     )
 
-    return new Index<T>(name, dataStore, searchEngine, suggestEngine, autocompleteEngine);
+    return new Index<T>(options.name, dataStore, searchEngine, suggestEngine, autocompleteEngine);
   }
 
   private constructor(
@@ -104,8 +116,14 @@ export class Emulator {
   /**
    * https://learn.microsoft.com/en-us/rest/api/searchservice/create-index
    */
-  public createIndex<T extends object>(name: string, schema: Schema, suggesters: Suggester[]) {
-    const index = Index.createIndex<T>(name, schema, suggesters);
+  public createIndex<T extends object>(options: {
+    name: string,
+    schema: Schema,
+    suggesters?: Suggester[],
+    scoringProfiles?: ScoringProfile<T>[],
+    defaultScoringProfile?: string,
+  }): Index<T> {
+    const index = Index.createIndex<T>(options);
     this.indices.push(index as unknown as Index<object>);
     return index;
   }

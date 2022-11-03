@@ -14,8 +14,10 @@ yourself to the tests and the [official API documentation](https://learn.microso
 for more.
 
 ```typescript
-import { Emulator, Schema, Suggester } from 'azure-search-emulator-js';
+// Import what you need from the package.
+import { Emulator, Schema, Suggester, type GeoJSONPoint } from 'azure-search-emulator-js';
 
+// You can use types to improve typings.
 type People = {
   id: string,
   fullName: string,
@@ -26,9 +28,12 @@ type People = {
     state: string,
     country: string,
     kind: 'home' | 'work',
+    geo: GeoJSONPoint,
     order: number,
   }[],
-}
+};
+
+// Define a schema that matches the documents you want to store.
 const peopleSchema: Schema = [
   { type: 'Edm.String', key: true, name: 'id', facetable: false },
   { type: 'Edm.String', name: 'fullName', facetable: false },
@@ -40,20 +45,90 @@ const peopleSchema: Schema = [
       { type: 'Edm.String', name: 'state' },
       { type: 'Edm.String', name: 'country' },
       { type: 'Edm.String', name: 'kind' },
+      { type: 'Edm.GeographyPoint', name: 'geo' },
       { type: 'Edm.Int32', name: 'order', facetable: false },
     ]
   },
 ];
+
+// Define suggesters configurations. (optional)
 const peopleSuggesters: Suggester[] = [
   {
     name: 'sg',
     searchMode: 'analyzingInfixMatching',
     fields: 'addresses/city, addresses/state, addresses/country',
   },
+];
+
+// Define scoring profiles. (optional)
+const peopleScoringProfiles: ScoringProfile<People> = [
+  {
+    name: 'plain',
+    text: {
+      weights: {
+        id: 15,
+        fullName: 10,
+      },
+    },
+  },
+  {
+    name: 'nearby',
+    functions: [
+      {
+        type: 'magnitude',
+        fieldName: 'addresses/order',
+        boost: 2,
+        magnitude: {
+          boostingRangeStart: 3,
+          boostingRangeEnd: 0,
+        },
+        interpolation: 'quadratic',
+      },
+      {
+        type: 'tag',
+        fieldName: 'addresses/kind',
+        boost: 3,
+        tag: {
+          tagsParameter: 'kind',
+        },
+        interpolation: 'constant',
+      },
+      {
+        type: 'distance',
+        fieldName: 'addresses/geo',
+        boost: 2,
+        distance: {
+          referencePointParameter: 'me',
+          boostingDistance: 75,
+        },
+      },
+      {
+        type: 'distance',
+        fieldName: 'addresses/geo',
+        boost: 5,
+        distance: {
+          referencePointParameter: 'me',
+          boostingDistance: 5,
+        },
+        interpolation: 'logarithmic'
+      },
+    ],
+  },
 ]
 
+// Create an instance of the Azure Cognitive Search Emulator.
 const emulator = new Emulator();
-const peopleIndex = emulator.createIndex<People>('people', peopleSchema, peopleSuggesters);
+
+// Create your index using your configurations.
+const peopleIndex = emulator.createIndex<People>({
+  name: 'people', 
+  schema: peopleSchema, 
+  suggesters: peopleSuggesters, 
+  scoringProfiles: peopleScoringProfiles,
+  defaultScoringProfile: 'plain',
+});
+
+// Populate your index with documents.
 peopleIndex.postDocuments({
   value: [
     {
@@ -67,11 +142,13 @@ peopleIndex.postDocuments({
           city: 'TownsVille',
           country: 'United States',
           kind: 'work',
+          geo: { type: 'Point', coordinates: [36.4945867, -78.4323851] },
         },
         {
           parts: '1 righthere drv',
           city: 'Metropolis',
           country: 'Japan',
+          geo: { type: 'Point', coordinates: [35.669496, 137.4239011] },
         }
       ]
     },
@@ -79,6 +156,7 @@ peopleIndex.postDocuments({
   ]
 });
 
+// Query your index.
 const results = peopleIndex.search({
   search: '[Bb]ob',
   select: ['id'],
@@ -102,7 +180,7 @@ const results = peopleIndex.search({
 //   },
 //   value: [
 //     {
-//       '@search.score': 3,
+//       '@search.score': 30,
 //       id: '1',
 //     },
 //     ...
@@ -114,7 +192,8 @@ const results = peopleIndex.search({
 Currently, the emulator supports search, suggest, autocomplete, count, and all data edition operations. You can expect
 full odata query support for all queries that uses them. This means $filter, $select, $orderby, $skip, $top, $count, as
 well as continuation tokens should work as intended. Search scoring, highlights, features, and facets are supported but
-might behave differently from the real service as they depend on full text search statistics.
+might behave differently from the real service as they depend on full text search statistics. Scoring profiles are also
+fully supported but might yield different results from the actual service.
 
 The emulator does schema validation through the use of strong typings and runtime validations. It is expected that the
 schema you use to create an index in the emulator should work without any modification when creating a real index in
@@ -127,8 +206,6 @@ The emulator does not use a full text search engine as its backend. Instead, que
 matching. This means that any query using the Lucene syntax, or features meant to control this syntax (like simple vs
 full query types) is not supported. This also means that suggesters, analysers and skillsets are not supported or
 extremely limited.
-
-It does not support scoring profiles.
 
 It does not support synonyms.
 
@@ -156,13 +233,12 @@ project with a competitor and switch to Azure Cognitive Search later down the li
 you can build your whole application, all the way to RC, and switch to the official service when you feel ready to take
 the next step and grow your user base.
 
-For larger projects, you might find it useful to run your entire front-end without any dependencies. This project has
-been designed with MirageJs in mind and will eventually offer a full API interceptor that is compatible with the official
-Azure Search javascript client library. This is now one less service to spin up on your dev machine when testing, or
-demoing, your application.
+For larger projects, you might find it useful to run your entire front-end without any dependencies since some
+circumstances like public demos. This project has been designed with MirageJs in mind and will eventually offer a full
+API interceptor that is compatible with the official Azure Search javascript client library. This is now one less
+service to spin up on your dev machine when testing, or demoing, your application.
 
 ## What's next
-- Scoring profiles.
 - Validation against queries made by the official client.
 - Support storing/loading the index to/from disk when running on the server.
 - Switch the backend to a full text search engine with Lucene syntax.

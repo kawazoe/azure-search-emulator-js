@@ -52,6 +52,7 @@ export class AutocompleteEngine<T extends object> {
           postTag: request.highlightPostTag ?? '',
           mode: request.autocompleteMode ?? 'oneTerm',
         }),
+        scoringStrategies: {},
       })] : []),
       useAutocompleteResult<T, '*'>(),
     ];

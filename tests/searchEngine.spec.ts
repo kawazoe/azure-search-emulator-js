@@ -4,23 +4,29 @@ import type { People } from './lib/mockSchema';
 import { peopleSchemaService } from './lib/mockSchema';
 
 import type { SearchDocumentMeta } from '../src';
-import { SearchEngine, SearchBackend } from '../src';
+import { SearchEngine, SearchBackend, Scorer } from '../src';
 
 function createEmpty() {
-  return new SearchEngine(new SearchBackend<People>(peopleSchemaService, () => []));
+  return new SearchEngine(
+    new SearchBackend<People>(peopleSchemaService, () => []),
+    new Scorer([], null),
+  );
 }
 function createBasic() {
-  return new SearchEngine(new SearchBackend<People>(
+  return new SearchEngine(
+    new SearchBackend<People>(
     peopleSchemaService,
     () => [
-      { id: '1', fullName: 'foo' },
-      { id: '2', fullName: 'bar' },
-      { id: '3', fullName: 'biz' },
-      { id: '4', fullName: 'buzz' },
-    ]
-  ));
+        { id: '1', fullName: 'foo' },
+        { id: '2', fullName: 'bar' },
+        { id: '3', fullName: 'biz' },
+        { id: '4', fullName: 'buzz' },
+      ]
+    ),
+    new Scorer([], null),
+  );
 }
-function createComplex() {
+function createComplex(scorer?: Scorer<People>) {
   const document:People = {
     id: '1',
     fullName: 'foo',
@@ -45,30 +51,39 @@ function createComplex() {
     }
   };
 
-  return new SearchEngine(new SearchBackend<People>(
-    peopleSchemaService,
-    () => [document],
-  ));
+  return new SearchEngine(
+    new SearchBackend<People>(
+      peopleSchemaService,
+      () => [document],
+    ),
+    scorer ?? new Scorer<People>([], null),
+  );
 }
 function createFacetable() {
-  return new SearchEngine(new SearchBackend<People>(
-    peopleSchemaService,
-    () => [
-      { id: '1', fullName: 'foo', income: 400, addresses: [{ parts: 'adr1', kind: 'home' }] },
-      { id: '2', fullName: 'bar', income: 700, addresses: [{ parts: 'adr2', kind: 'home' }] },
-      { id: '3', fullName: 'biz', income: 400, addresses: [{ parts: 'adr3', kind: 'work' }] },
-      { id: '4', fullName: 'buzz', income: 70, addresses: [{ parts: 'adr4', kind: 'home' }] },
-    ]
-  ));
+  return new SearchEngine(
+    new SearchBackend<People>(
+      peopleSchemaService,
+      () => [
+        { id: '1', fullName: 'foo', income: 400, addresses: [{ parts: 'adr1', kind: 'home' }] },
+        { id: '2', fullName: 'bar', income: 700, addresses: [{ parts: 'adr2', kind: 'home' }] },
+        { id: '3', fullName: 'biz', income: 400, addresses: [{ parts: 'adr3', kind: 'work' }] },
+        { id: '4', fullName: 'buzz', income: 70, addresses: [{ parts: 'adr4', kind: 'home' }] },
+      ]
+    ),
+    new Scorer([], null),
+  );
 }
 function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
     .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
 
-  return new SearchEngine(new SearchBackend<People>(
-    peopleSchemaService,
-    () => documents
-  ));
+  return new SearchEngine(
+    new SearchBackend<People>(
+      peopleSchemaService,
+      () => documents
+    ),
+    new Scorer([], null),
+  );
 }
 
 function stripSearchMeta<T extends object>({
@@ -539,6 +554,30 @@ describe('SearchEngine', () => {
 
       // Coverage is hard-coded to 100% in the emulator since the data isn't sharded.
       expect(results['@search.coverage']).toBe(100);
+    });
+  });
+
+  describe('scoring', () => {
+    it('should use scoring strategies when available', () => {
+      const sut = createComplex(
+        new Scorer<People>(
+          [{
+            name: 'doubleFullName',
+            text: {
+              weights: {
+                fullName: 2,
+              },
+            }
+          }],
+          null,
+        ),
+      );
+
+      const inProfile = sut.search({ search: 'foo', scoringProfile: 'doubleFullName' });
+      const outProfile = sut.search({ search: 'home', scoringProfile: 'doubleFullName' });
+
+      expect(inProfile.value[0]['@search.score']).toBe(6);
+      expect(outProfile.value[0]['@search.score']).toBe(4);
     });
   });
 });

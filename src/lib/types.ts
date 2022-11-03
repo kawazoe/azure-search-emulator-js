@@ -1,3 +1,5 @@
+import { GeoJSONPoint } from './geoPoints';
+
 /**
  * Accepts a Prop string with an optional Parent string and join them together with a Delimiter in between.
  */
@@ -20,7 +22,7 @@ export type DeepKeyOf<T, Delimiter = '.', Depth extends number = 5> = [Depth] ex
       [Key in keyof T]-?: Key extends string
         ? T[Key] extends Array<infer E>
           ? Key | Join<Key, DeepKeyOf<E, Delimiter, Prev[Depth]>, Delimiter>
-          : T[Key] extends Date
+          : [T[Key]] extends [Date | GeoJSONPoint]
             ? Key
             : Key | Join<Key, DeepKeyOf<T[Key], Delimiter, Prev[Depth]>, Delimiter>
         : never;
@@ -55,8 +57,8 @@ export type DeepPick<
           ? DeepPick<E, Keys, Delimiter, Join<Parent, Key, Delimiter>, Prev[Depth]> extends never | Record<string | number, never>
             ? never
             : Array<DeepPick<E, Keys, Delimiter, Join<Parent, Key, Delimiter>, Prev[Depth]>>
-          : T[Key] extends Date
-            ? never //< Do not dive in Date
+          : [T[Key]] extends [Date | GeoJSONPoint]
+            ? never //< Do not dive in excluded types
             : T[Key] extends object
               // Dive deeper and flatten results
               ? DeepPick<T[Key], Keys, Delimiter, Join<Parent, Key, Delimiter>, Prev[Depth]> extends Record<string | number, never>

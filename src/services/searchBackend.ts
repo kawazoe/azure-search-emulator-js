@@ -1,7 +1,7 @@
 import { sortBy, sum, uniq } from '../lib/iterables';
 import { getValue } from '../lib/objects';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
-import { toODataQuery } from '../lib/odata';
+import { DeepKeyOf, toODataQuery } from '../lib/odata';
 import { _throw } from '../lib/_throw';
 
 import type { FieldDefinition, FlatSchemaEntry } from './schema';
@@ -10,6 +10,7 @@ import { SchemaService } from './schema';
 import * as Parsers from '../parsers';
 
 import { normalizeValue } from './utils';
+import { ScoringStrategies } from './scorer';
 
 export interface SearchFacetBase {
   count: number;
@@ -69,7 +70,7 @@ export type Reducer<T extends object, Keys extends ODataSelect<T>> = (
 ) => ReductionResults<ODataSelectResult<T, Keys>>;
 export type DocumentMiddleware<T extends object, Keys extends ODataSelect<T>> = (
   next: Reducer<T, Keys>,
-  schemaService: SchemaService<T>
+  schemaService: SchemaService<T>,
 ) => Reducer<T, Keys>;
 
 export function useFilterScoring<T extends object, Keys extends ODataSelect<T>>(filter: string): DocumentMiddleware<T, Keys> {
@@ -93,11 +94,12 @@ export function useFilterScoring<T extends object, Keys extends ODataSelect<T>>(
 
 export type SearchMatch = { input: string, match: string, index: number }
 export type SuggestionStrategy<T extends object> =
-  (schemaService: SchemaService<T>) => (ctx: FlatSchemaEntry, matches: SearchMatch[]) => unknown[];
+  (schemaService: SchemaService<T>) => (field: FlatSchemaEntry, matches: SearchMatch[]) => unknown[];
 export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(options: {
   search: string,
   searchFields: string,
   suggestionStrategy: SuggestionStrategy<T>,
+  scoringStrategies: ScoringStrategies<T>,
 }): DocumentMiddleware<T, Keys> {
   return (next, schemaService) => {
     const searchFieldsCommand = Parsers.search.parse(options.searchFields);
@@ -135,12 +137,13 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
           continue;
         }
 
+        const baseScore = sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
         const uniqueMatches = uniq(matches, m => m.match);
         const valueLength = sum(normalized.map(v => v.length));
         const matchedLength = sum(matches.map(t => t.match.length));
         const similarityScore = valueLength === 0 ? 0 : (matchedLength / valueLength);
 
-        score += sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
+        score += options.scoringStrategies[searchable[0] as DeepKeyOf<T, '/'>]?.(value, baseScore) ?? baseScore;
 
         suggestions[searchable[0]] = suggestionStrategy(searchable, uniqueMatches);
         features[searchable[0]] = {
@@ -175,8 +178,8 @@ export function createHighlightSuggestionStrategy<T extends object>(options: {
 
     const highlightPaths = highlightCommand.toPaths();
 
-    return (ctx, matches) => {
-      if (!highlightPaths.includes(ctx[0])) {
+    return (field, matches) => {
+      if (!highlightPaths.includes(field[0])) {
         return [];
       }
 
@@ -213,8 +216,8 @@ export function createAutocompleteSuggestionStrategy<T extends object>(options: 
     const highlightPaths = highlightCommand.toPaths();
     const getCutoff = autocompleteCutoffs[options.mode ?? 'oneTerm'];
 
-    return (ctx, matches) => {
-      if (!highlightPaths.includes(ctx[0])) {
+    return (field, matches) => {
+      if (!highlightPaths.includes(field[0])) {
         return [];
       }
 

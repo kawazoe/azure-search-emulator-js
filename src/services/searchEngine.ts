@@ -15,6 +15,7 @@ import {
   useSearchScoring,
   createHighlightSuggestionStrategy
 } from './searchBackend';
+import { Scorer } from './scorer';
 
 export interface SearchDocumentsRequest<T extends object, Keys extends ODataSelect<T> | string> {
   count?: boolean;
@@ -26,6 +27,9 @@ export interface SearchDocumentsRequest<T extends object, Keys extends ODataSele
   minimumCoverage?: number;
   orderBy?: string;           //< OrderBy Expression
   queryType?: 'simple' | 'full';  //< Not supported
+  scoringParameters?: string[],
+  scoringProfile?: string,
+  scoringStatistics?: 'local' | 'global',  //< Not supported
   search?: string;            //< simple query expression
   searchFields?: string;      //< fields as ODataSelect
   searchMode?: 'any' | 'all'; //< Not supported
@@ -49,6 +53,7 @@ const maxPageSize = 1000;
 export class SearchEngine<T extends object> {
   constructor(
     private readonly backend: SearchBackend<T>,
+    private readonly scorer: Scorer<T>,
   ) {
   }
 
@@ -64,6 +69,10 @@ export class SearchEngine<T extends object> {
           postTag: request.highlightPostTag ?? '</em>',
           maxPadding: 30,
         }),
+        scoringStrategies: this.scorer.getScoringStrategies(
+          request.scoringProfile ?? null,
+          request.scoringParameters ?? null
+        ),
       })] : []),
       ...(request.facets ? [useFacetExtraction<T, Keys>(request.facets)] : []),
       ...(request.select ? [useSelect<T, Keys>(request.select)] : []),

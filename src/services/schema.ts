@@ -1,6 +1,8 @@
 import { _never } from '../lib/_never';
 import { CustomError } from '../lib/errors';
 import { groupBy, isIterable } from '../lib/iterables';
+import { GeoJSONPoint } from '../lib/geoPoints';
+
 import * as Parsers from '../parsers';
 
 export type KeyFieldDefinition = {
@@ -197,8 +199,6 @@ export type FlatSchema = FlatSchemaEntry[];
 export function isKeyFieldDefinition(field: FieldDefinition): field is KeyFieldDefinition {
   return field.type === 'Edm.String' && field.key === true;
 }
-
-export type GeoJSONPoint = { type: 'Point', coordinates: number[] };
 
 const isEdmString = (value: unknown) => typeof value === 'string';
 const isKeyString = (value: unknown) => value != null && value != '' && isEdmString(value);
