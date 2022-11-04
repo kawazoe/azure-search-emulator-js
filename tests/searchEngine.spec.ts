@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { People } from './lib/mockSchema';
-import { peopleSchemaService } from './lib/mockSchema';
+import { peopleSchemaService, peopleToStoredDocument } from './lib/mockSchema';
 
 import type { SearchDocumentMeta } from '../src';
 import { SearchEngine, SearchBackend, Scorer } from '../src';
@@ -17,10 +17,10 @@ function createBasic() {
     new SearchBackend<People>(
     peopleSchemaService,
     () => [
-        { id: '1', fullName: 'foo' },
-        { id: '2', fullName: 'bar' },
-        { id: '3', fullName: 'biz' },
-        { id: '4', fullName: 'buzz' },
+        peopleToStoredDocument({ id: '1', fullName: 'foo' }),
+        peopleToStoredDocument({ id: '2', fullName: 'bar' }),
+        peopleToStoredDocument({ id: '3', fullName: 'biz' }),
+        peopleToStoredDocument({ id: '4', fullName: 'buzz' }),
       ]
     ),
     new Scorer([], null),
@@ -54,7 +54,7 @@ function createComplex(scorer?: Scorer<People>) {
   return new SearchEngine(
     new SearchBackend<People>(
       peopleSchemaService,
-      () => [document],
+      () => [peopleToStoredDocument(document)],
     ),
     scorer ?? new Scorer<People>([], null),
   );
@@ -64,10 +64,10 @@ function createFacetable() {
     new SearchBackend<People>(
       peopleSchemaService,
       () => [
-        { id: '1', fullName: 'foo', income: 400, addresses: [{ parts: 'adr1', kind: 'home' }] },
-        { id: '2', fullName: 'bar', income: 700, addresses: [{ parts: 'adr2', kind: 'home' }] },
-        { id: '3', fullName: 'biz', income: 400, addresses: [{ parts: 'adr3', kind: 'work' }] },
-        { id: '4', fullName: 'buzz', income: 70, addresses: [{ parts: 'adr4', kind: 'home' }] },
+        peopleToStoredDocument({ id: '1', fullName: 'foo', income: 400, addresses: [{ parts: 'adr1', kind: 'home' }] }),
+        peopleToStoredDocument({ id: '2', fullName: 'bar', income: 700, addresses: [{ parts: 'adr2', kind: 'home' }] }),
+        peopleToStoredDocument({ id: '3', fullName: 'biz', income: 400, addresses: [{ parts: 'adr3', kind: 'work' }] }),
+        peopleToStoredDocument({ id: '4', fullName: 'buzz', income: 70, addresses: [{ parts: 'adr4', kind: 'home' }] }),
       ]
     ),
     new Scorer([], null),
@@ -75,7 +75,7 @@ function createFacetable() {
 }
 function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
-    .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+    .map((_, i) => peopleToStoredDocument({ id: `${i}`, fullName: `${i}` }));
 
   return new SearchEngine(
     new SearchBackend<People>(

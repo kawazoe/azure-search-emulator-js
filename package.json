@@ -1,6 +1,6 @@
 {
-  "name": "@endeavourapp/azure-search-emulator-js",
-  "version": "0.4.1",
+  "name": "azure-search-emulator-js",
+  "version": "0.5.1",
   "description": "An unofficial javascript emulator for the Azure Cognitive Search API.",
   "author": {
     "name": "Etienne Maheu",

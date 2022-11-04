@@ -319,10 +319,12 @@ geo_distance_call
         //
         {
         const { fn_geo_distance } = yy.fns;
+        const { makeGeoPointFromPojo } = yy.deps;
         const from = $3;
         const to = $5;
+        const geoTo = makeGeoPointFromPojo(to);
         const canApply = from.canApply;
-        const apply = (input) => fn_geo_distance(input, from, to);
+        const apply = (input) => fn_geo_distance(input, from, geoTo);
         $$ = { type: "FN_GEO_DISTANCE", from, to, canApply, apply };
         }
     }
@@ -331,10 +333,12 @@ geo_distance_call
         //
         {
         const { fn_geo_distance } = yy.fns;
+        const { makeGeoPointFromPojo } = yy.deps;
         const from = $3;
+        const geoFrom = makeGeoPointFromPojo(from);
         const to = $5;
         const canApply = to.canApply;
-        const apply = (input) => fn_geo_distance(input, to, from);
+        const apply = (input) => fn_geo_distance(input, to, geoFrom);
         $$ = { type: "FN_GEO_DISTANCE", from, to, canApply, apply };
         }
     }
@@ -356,10 +360,12 @@ geo_intersects_call
         //
         {
         const { fn_geo_intersects } = yy.fns;
+        const { makeGeoPointFromPojo, makeGeoPolygon } = yy.deps;
         const point = $3;
         const polygon = $5;
+        const geoPolygon = makeGeoPolygon(...polygon.points.map(makeGeoPointFromPojo));
         const canApply = point.canApply;
-        const apply = (input) => fn_geo_intersects(input, point, polygon.points) ? 1 : 0;
+        const apply = (input) => fn_geo_intersects(input, point, geoPolygon) ? 1 : 0;
         $$ = { type: "FN_GEO_INTERSECTS", point, polygon, canApply, apply };
         }
     }

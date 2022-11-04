@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { filter as parser } from '../src/parsers';
+import { makeGeoPoint } from '../src/lib/geo';
 
 describe('query-select', () => {
   describe('apply', () => {
@@ -31,59 +32,57 @@ describe('query-select', () => {
       });
     }
 
-    const makeGeoPoint = (lon, lat) => ({ lon, lat });
-
     const fieldPathAst = (...value) => ({ type: "FIELD_PATH", value });
-    const identifierAst = (value) => ({ type: "IDENTIFIER", value });
+    const identifierAst = value => ({ type: "IDENTIFIER", value });
     const comparisonAst = (left, op, right) => ({ type: "COMPARISON", left, op, right });
-    const stringAst = (value) => ({ type: "STRING", value });
-    const datetimeOffsetAst = (value) => ({ type: "DATETIMEOFFSET", value });
-    const integerAst = (value) => ({ type: "INTEGER", value });
-    const floatAst = (value) => ({ type: "FLOAT", value });
+    const stringAst = value => ({ type: "STRING", value });
+    const datetimeOffsetAst = value => ({ type: "DATETIMEOFFSET", value });
+    const integerAst = value => ({ type: "INTEGER", value });
+    const floatAst = value => ({ type: "FLOAT", value });
     const nanAst = () => ({ type: "NOT_A_NUMBER", value: Number.NaN });
     const posInfAst = () => ({ type: "POSITIVE_INFINITY", value: Number.POSITIVE_INFINITY });
     const negInfAst = () => ({ type: "NEGATIVE_INFINITY", value: Number.NEGATIVE_INFINITY });
-    const booleanAst = (value) => ({ type: "BOOLEAN", value });
+    const booleanAst = value => ({ type: "BOOLEAN", value });
     const nullAst = () => ({ type: "NULL", value: null });
-    const geoPointAst = (point) => ({ type: 'GEO_POINT', ...point });
+    const geoPointAst = (lon, lat) => ({ type: 'GEO_POINT', lon, lat });
     const geoPolygonAst = (...points) => ({ type: 'GEO_POLYGON', points: [...points, points[0]] });
     const andExpressionAst = (left, right) => ({ type: "AND_EXPRESSION", left, right });
     const orExpressionAst = (left, right) => ({ type: "OR_EXPRESSION", left, right });
-    const notExpressionAst = (value) => ({ type: "NOT_EXPRESSION", value });
-    const groupAst = (value) => ({ type: "GROUP_EXPRESSION", value });
+    const notExpressionAst = value => ({ type: "NOT_EXPRESSION", value });
+    const groupAst = value => ({ type: "GROUP_EXPRESSION", value });
     const lambdaAst = (params, expression) => ({ type: "LAMBDA", params, expression });
     const allFilterAst = (target, expression) => ({ type: "ALL_FILTER", target, expression });
     const anyFilterAst = (target, expression) => {
       if (expression) {
-        return ({ type: "ANY_FILTER", target, expression });
+        return { type: "ANY_FILTER", target, expression };
       }
-      return ({ type: "ANY_FILTER", target });
+      return { type: "ANY_FILTER", target };
     };
     const geoDistanceAst = (from, to) => ({ type: "FN_GEO_DISTANCE", from, to });
     const geoIntersectsAst = (point, polygon) => ({ type: "FN_GEO_INTERSECTS", point, polygon });
     const searchInAst = (variable, valueList, delimiter) => {
       if (delimiter) {
-        return ({ type: "FN_SEARCH_IN", variable, valueList, delimiter });
+        return { type: "FN_SEARCH_IN", variable, valueList, delimiter };
       }
-      return ({ type: "FN_SEARCH_IN", variable, valueList });
+      return { type: "FN_SEARCH_IN", variable, valueList };
     };
     const searchIsMatchAst = (search, searchFields, queryType, searchMode) => {
       if (searchFields && queryType && searchMode) {
-        return ({ type: "FN_SEARCH_ISMATCH", search, searchFields, queryType, searchMode });
+        return { type: "FN_SEARCH_ISMATCH", search, searchFields, queryType, searchMode };
       }
       if (searchFields) {
-        return ({ type: "FN_SEARCH_ISMATCH", search, searchFields });
+        return { type: "FN_SEARCH_ISMATCH", search, searchFields };
       }
-      return ({ type: "FN_SEARCH_ISMATCH", search });
+      return { type: "FN_SEARCH_ISMATCH", search };
     };
     const searchIsMatchScoringAst = (search, searchFields, queryType, searchMode) => {
       if (searchFields && queryType && searchMode) {
-        return ({ type: "FN_SEARCH_ISMATCHSCORING", search, searchFields, queryType, searchMode });
+        return { type: "FN_SEARCH_ISMATCHSCORING", search, searchFields, queryType, searchMode };
       }
       if (searchFields) {
-        return ({ type: "FN_SEARCH_ISMATCHSCORING", search, searchFields });
+        return { type: "FN_SEARCH_ISMATCHSCORING", search, searchFields };
       }
-      return ({ type: "FN_SEARCH_ISMATCHSCORING", search });
+      return { type: "FN_SEARCH_ISMATCHSCORING", search };
     };
 
     const constants = [
@@ -253,16 +252,16 @@ describe('query-select', () => {
       )],
     ];
     const functions = [
-      ["geo.distance(v, geography'POINT(1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(1, 2))), "eq", integerAst(0))],
-      ["geo.distance(v, geography'POINT(-1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(-1, 2))), "eq", integerAst(0))],
-      ["geo.distance(v, geography'POINT(1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(1, -2))), "eq", integerAst(0))],
-      ["geo.distance(v, geography'POINT(-1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(makeGeoPoint(-1, -2))), "eq", integerAst(0))],
-      ["geo.distance(geography'POINT(1.0 2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(1, 2)), identifierAst("v")), "eq", integerAst(0))],
-      ["geo.distance(geography'POINT(-1.0 2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(-1, 2)), identifierAst("v")), "eq", integerAst(0))],
-      ["geo.distance(geography'POINT(1.0 -2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(1, -2)), identifierAst("v")), "eq", integerAst(0))],
-      ["geo.distance(geography'POINT(-1.0 -2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(makeGeoPoint(-1, -2)), identifierAst("v")), "eq", integerAst(0))],
-      ["geo.intersects(v, geography'POLYGON((1.0 2.0, 3.0 4.0, 5.0 6.0, 1.0 2.0))')", geoIntersectsAst(identifierAst("v"), geoPolygonAst(makeGeoPoint(1, 2), makeGeoPoint(3, 4), makeGeoPoint(5, 6)))],
-      ["geo.intersects(v, geography'POLYGON((1.0 2.0, 3.0 4.0, 5.0 6.0, 7.0 8.0, 1.0 2.0))')", geoIntersectsAst(identifierAst("v"), geoPolygonAst(makeGeoPoint(1, 2), makeGeoPoint(3, 4), makeGeoPoint(5, 6), makeGeoPoint(7, 8)))],
+      ["geo.distance(v, geography'POINT(1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(1, 2)), "eq", integerAst(0))],
+      ["geo.distance(v, geography'POINT(-1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(-1, 2)), "eq", integerAst(0))],
+      ["geo.distance(v, geography'POINT(1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(1, -2)), "eq", integerAst(0))],
+      ["geo.distance(v, geography'POINT(-1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(-1, -2)), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(1.0 2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(1, 2), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(-1.0 2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(-1, 2), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(1.0 -2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(1, -2), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.distance(geography'POINT(-1.0 -2.0)', v) eq 0", comparisonAst(geoDistanceAst(geoPointAst(-1, -2), identifierAst("v")), "eq", integerAst(0))],
+      ["geo.intersects(v, geography'POLYGON((1.0 2.0, 3.0 4.0, 5.0 6.0, 1.0 2.0))')", geoIntersectsAst(identifierAst("v"), geoPolygonAst({ lon: 1, lat: 2 }, { lon: 3, lat: 4 }, { lon: 5, lat: 6 }))],
+      ["geo.intersects(v, geography'POLYGON((1.0 2.0, 3.0 4.0, 5.0 6.0, 7.0 8.0, 1.0 2.0))')", geoIntersectsAst(identifierAst("v"), geoPolygonAst({ lon: 1, lat: 2 }, { lon: 3, lat: 4 }, { lon: 5, lat: 6 }, { lon: 7, lat: 8 }))],
       ["search.in(v, '1, 2, 3')", searchInAst(identifierAst("v"), stringAst("1, 2, 3"))],
       ["search.in(v, '1, 2, 3', ', ')", searchInAst(identifierAst("v"), stringAst("1, 2, 3"), stringAst(", "))],
       ["search.ismatch('q')", searchIsMatchAst(stringAst("q"))],

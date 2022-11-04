@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { People } from './lib/mockSchema';
-import { peopleSchemaKey, peopleSchemaService, peopleSuggesterProvider } from './lib/mockSchema';
+import {
+  peopleSchemaKey,
+  peopleSchemaService,
+  peopleSuggesterProvider,
+  peopleToStoredDocument
+} from './lib/mockSchema';
 
 import { SuggestEngine, SearchBackend } from '../src';
 
@@ -17,10 +22,10 @@ function createBasic() {
     new SearchBackend<People>(
       peopleSchemaService,
       () => [
-        { id: '1', fullName: 'foo' },
-        { id: '2', fullName: 'bar' },
-        { id: '3', fullName: 'biz' },
-        { id: '4', fullName: 'buzz' },
+        peopleToStoredDocument({ id: '1', fullName: 'foo' }),
+        peopleToStoredDocument({ id: '2', fullName: 'bar' }),
+        peopleToStoredDocument({ id: '3', fullName: 'biz' }),
+        peopleToStoredDocument({ id: '4', fullName: 'buzz' }),
       ]
     ),
     () => peopleSchemaKey,
@@ -55,7 +60,7 @@ function createComplex() {
   return new SuggestEngine<People>(
     new SearchBackend<People>(
       peopleSchemaService,
-    () => [document],
+    () => [peopleToStoredDocument(document)],
     ),
     () => peopleSchemaKey,
     peopleSuggesterProvider,
@@ -63,7 +68,7 @@ function createComplex() {
 }
 function createLargeDataSet() {
   const documents = Array.from(new Array(1234))
-    .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+    .map((_, i) => peopleToStoredDocument({ id: `${i}`, fullName: `${i}` }));
 
   return new SuggestEngine<People>(
     new SearchBackend<People>(

@@ -1,16 +1,14 @@
 import { sortBy, sum, uniq } from '../lib/iterables';
-import { getValue } from '../lib/objects';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 import { DeepKeyOf, toODataQuery } from '../lib/odata';
 import { _throw } from '../lib/_throw';
 
-import type { FieldDefinition, FlatSchemaEntry } from './schema';
+import type { FieldDefinition, FlatSchemaEntry, ParsedValue } from './schema';
 import { SchemaService } from './schema';
+import type { ScoringBases, ScoringStrategies } from './scorer';
+import type { StoredDocument } from './dataStore';
 
 import * as Parsers from '../parsers';
-
-import { normalizeValue } from './utils';
-import { ScoringStrategies } from './scorer';
 
 export interface SearchFacetBase {
   count: number;
@@ -37,12 +35,12 @@ export interface SearchDocumentMeta {
 }
 
 export type SearchResult<T extends object> = SearchDocumentMeta & T;
+export interface SuggestDocumentMeta {
+  '@search.text': string;
+}
 export interface AutocompleteResult {
   text: string;
   queryPlusText: string;
-}
-export interface SuggestDocumentMeta {
-  '@search.text': string;
 }
 export type SuggestResult<T extends object> = SuggestDocumentMeta & T;
 export interface BackendResults<T extends object> {
@@ -61,9 +59,10 @@ export interface ReductionResults<T extends object> {
 export type Reducer<T extends object, Keys extends ODataSelect<T>> = (
   accumulator: ReductionResults<ODataSelectResult<T, Keys>>,
   current: {
-    document: T,
+    document: StoredDocument<T>,
     selected?: ODataSelectResult<T, Keys>,
-    score: number,
+    globalScore: number,
+    scores: ScoringBases<T>,
     suggestions: SearchSuggestions,
     features: SearchFeatures,
   }
@@ -79,13 +78,13 @@ export function useFilterScoring<T extends object, Keys extends ODataSelect<T>>(
     schemaService.assertCommands({filterCommand});
 
     return (acc, cur) => {
-      const score = filterCommand.apply(cur.document);
+      const score = filterCommand.apply(cur.document.original);
 
       if (score <= 0) {
         return acc;
       }
 
-      cur.score += score;
+      cur.globalScore += score;
 
       return next(acc, cur);
     };
@@ -94,12 +93,11 @@ export function useFilterScoring<T extends object, Keys extends ODataSelect<T>>(
 
 export type SearchMatch = { input: string, match: string, index: number }
 export type SuggestionStrategy<T extends object> =
-  (schemaService: SchemaService<T>) => (field: FlatSchemaEntry, matches: SearchMatch[]) => unknown[];
+  (schemaService: SchemaService<T>) => (field: FlatSchemaEntry<T>, matches: SearchMatch[]) => unknown[];
 export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(options: {
   search: string,
   searchFields: string,
   suggestionStrategy: SuggestionStrategy<T>,
-  scoringStrategies: ScoringStrategies<T>,
 }): DocumentMiddleware<T, Keys> {
   return (next, schemaService) => {
     const searchFieldsCommand = Parsers.search.parse(options.searchFields);
@@ -115,20 +113,18 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
     const suggestionStrategy = options.suggestionStrategy(schemaService);
 
     return (acc, cur) => {
-      let score = 0;
+      let scores: ScoringBases<T> = [];
       let suggestions: SearchSuggestions = {};
       let features: SearchFeatures = {};
 
       // TODO: Replace tuple with object for readability
       for (const searchable of searchables) {
-        const value = getValue(cur.document, searchable[1]);
-
-        if (value == null) {
+        const parsed: ParsedValue | undefined = cur.document.parsed[searchable[0] as DeepKeyOf<T>];
+        if (parsed == null || !(parsed.kind === 'text' || parsed.kind === 'generic')) {
           continue;
         }
 
-        const normalized = normalizeValue(value);
-        const matches = normalized
+        const matches = parsed.normalized
           .flatMap(str => Array.from(str.matchAll(searchRegex)))
           .filter(m => !!m[0])
           .map(m => ({ match: m[0], index: m.index ?? 0, input: m.input ?? '' } as SearchMatch));
@@ -137,13 +133,15 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
           continue;
         }
 
-        const baseScore = sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length));
+        scores.push({
+          key: searchable[0],
+          score: sum(matches.map(t => (1 - t.index / t.input.length) * t.match.length)),
+        });
+
         const uniqueMatches = uniq(matches, m => m.match);
-        const valueLength = sum(normalized.map(v => v.length));
+        const valueLength = sum(parsed.normalized.map(v => v.length));
         const matchedLength = sum(matches.map(t => t.match.length));
         const similarityScore = valueLength === 0 ? 0 : (matchedLength / valueLength);
-
-        score += options.scoringStrategies[searchable[0] as DeepKeyOf<T, '/'>]?.(value, baseScore) ?? baseScore;
 
         suggestions[searchable[0]] = suggestionStrategy(searchable, uniqueMatches);
         features[searchable[0]] = {
@@ -153,11 +151,11 @@ export function useSearchScoring<T extends object, Keys extends ODataSelect<T>>(
         }
       }
 
-      if (score <= 0) {
+      if (scores.length <= 0) {
         return acc;
       }
 
-      cur.score += score;
+      cur.scores = scores;
       cur.suggestions = suggestions;
       cur.features = features;
 
@@ -253,11 +251,11 @@ export function useSelect<T extends object, Keys extends ODataSelect<T>>(select:
     schemaService.assertCommands({selectCommand});
 
     return (acc, cur) => {
-      cur.selected = selectCommand.apply(cur.document) as ODataSelectResult<T, Keys>;
+      cur.selected = selectCommand.apply(cur.document.original) as ODataSelectResult<T, Keys>;
 
       return next(acc, cur);
     };
-  }
+  };
 }
 
 export function useFacetExtraction<T extends object, Keys extends ODataSelect<T>>(facets: string[]): DocumentMiddleware<T, Keys> {
@@ -266,18 +264,30 @@ export function useFacetExtraction<T extends object, Keys extends ODataSelect<T>
     schemaService.assertCommands({facetCommands});
 
     return (acc, cur) => {
-      acc.facets = facetCommands.reduce((a, c) => c.apply(a, cur.document), acc.facets);
+      acc.facets = facetCommands.reduce((a, c) => c.apply(a, cur.document.original), acc.facets);
 
       return next(acc, cur);
     };
-  }
+  };
+}
+
+export function useScoringProfiles<T extends object, Keys extends ODataSelect<T>>(options: {
+  scoringStrategies: ScoringStrategies<T>,
+}): DocumentMiddleware<T, Keys> {
+  return (next) => {
+    return (acc, cur) => {
+      cur.globalScore += options.scoringStrategies(cur.document.parsed, cur.scores);
+
+      return next(acc, cur);
+    };
+  };
 }
 
 export function useSearchResult<T extends object, Keys extends ODataSelect<T>>(): DocumentMiddleware<T, Keys> {
   return (next) => (acc, cur) => {
     acc.values.push({
-      ...cur.selected ?? cur.document,
-      '@search.score': cur.score,
+      ...cur.selected ?? cur.document.original,
+      '@search.score': cur.globalScore,
       '@search.highlights': cur.suggestions,
       '@search.features': cur.features,
     } as unknown as SearchResult<ODataSelectResult<T, Keys>>);
@@ -292,9 +302,9 @@ export function useSuggestResult<T extends object, Keys extends ODataSelect<T>>(
       .sort(sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc))
       .flatMap(([, suggestions]) => suggestions
         .map((s) => ({
-          '@search.score': cur.score,
+          '@search.score': cur.globalScore,
           '@search.text': `${s}`,
-          ...cur.selected ?? cur.document,
+          ...cur.selected ?? cur.document.original,
         } as SuggestResult<ODataSelectResult<T, Keys>>)),
       );
 
@@ -311,7 +321,7 @@ export function useAutocompleteResult<T extends object, Keys extends ODataSelect
       .flatMap(([, suggestions]) => {
         const results = suggestions
           .map(result => ({
-            '@search.score': cur.score,
+            '@search.score': cur.globalScore,
             ...result as AutocompleteResult,
           }));
 
@@ -440,7 +450,7 @@ export function useStripScore<T extends object, Keys extends ODataSelect<T>>(): 
 export class SearchBackend<T extends object> {
   constructor(
     private readonly schemaService: SchemaService<T>,
-    private readonly documentsProvider: () => T[],
+    private readonly documentsProvider: () => StoredDocument<T>[],
   ) {
   }
 
@@ -465,7 +475,8 @@ export class SearchBackend<T extends object> {
     const results = this.documentsProvider()
       .map(document => ({
         document,
-        score: 0,
+        globalScore: 0,
+        scores: [],
         suggestions: {},
         features: {},
       }))

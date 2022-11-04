@@ -12,8 +12,9 @@ import {
   useSearchScoring,
   createHighlightSuggestionStrategy,
   useSuggestResult,
-  useStripScore
+  useStripScore, useScoringProfiles
 } from './searchBackend';
+import { Scorer } from './scorer';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {
   filter?: string;          //< OData Filter expression
@@ -63,9 +64,9 @@ export class SuggestEngine<T extends object> {
           postTag: request.highlightPostTag ?? '',
           maxPadding: 30,
         }),
-        scoringStrategies: {},
       })] : []),
       useSelect<T, Keys>(request.select ?? [this.keyFieldProvider().name as Keys]),
+      useScoringProfiles<T, Keys>({ scoringStrategies: Scorer.nullStrategy }),
       useSuggestResult<T, Keys>(),
     ];
 

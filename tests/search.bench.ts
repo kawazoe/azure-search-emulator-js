@@ -3,11 +3,25 @@ import { bench, describe } from 'vitest';
 import { AutocompleteEngine, Scorer, SearchBackend, SearchEngine, SuggestEngine } from '../src';
 
 import type { People } from './lib/mockSchema';
-import { peopleSchemaKey, peopleSchemaService, peopleSuggesterProvider } from './lib/mockSchema';
+import {
+  hydrateParsedProxies,
+  peopleSchemaKey,
+  peopleSchemaService,
+  peopleSuggesterProvider,
+  peopleToStoredDocument
+} from './lib/mockSchema';
+
+function createLargeDataSet() {
+  return Array.from(new Array(1234))
+    .map((_, i) => {
+      const doc = peopleToStoredDocument({ id: `${i}`, fullName: `${i}` });
+      hydrateParsedProxies(doc.parsed);
+      return doc;
+    });
+}
 
 function createSearchEngine() {
-  const documents = Array.from(new Array(1234))
-    .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+  const documents = createLargeDataSet();
 
   return new SearchEngine(
     new SearchBackend<People>(
@@ -19,8 +33,7 @@ function createSearchEngine() {
 }
 
 function createSuggestEngine() {
-  const documents = Array.from(new Array(1234))
-    .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+  const documents = createLargeDataSet();
 
   return new SuggestEngine<People>(
     new SearchBackend<People>(
@@ -33,8 +46,7 @@ function createSuggestEngine() {
 }
 
 function createAutocompleteEngine() {
-  const documents = Array.from(new Array(1234))
-    .map((_, i) => ({ id: `${i}`, fullName: `${i}` }));
+  const documents = createLargeDataSet();
 
   return new AutocompleteEngine<People>(
     new SearchBackend<People>(
@@ -45,7 +57,7 @@ function createAutocompleteEngine() {
   );
 }
 
-describe('SearchEngine', () => {
+describe.only('SearchEngine', () => {
   const sut = createSearchEngine();
 
   bench('large query', () => {

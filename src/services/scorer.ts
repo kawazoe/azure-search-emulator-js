@@ -1,12 +1,13 @@
 import { _never } from '../lib/_never';
-import { average, groupBy, join, max, min, sum } from '../lib/iterables';
+import { average, max, min, sum } from '../lib/iterables';
 import { _throw } from '../lib/_throw';
 import { addTime, subtractTime } from '../lib/dates';
-import { calculateDistance, GeoJSONPoint, makeGeoPoint } from '../lib/geoPoints';
+import { calculateDistance, makeGeoPoint } from '../lib/geo';
 import { DeepKeyOf } from '../lib/odata';
+import type { ParsedDocument, ParsedValue, ParsedValueGeo, ParsedValueText } from './schema';
 
 export interface ScoringFnIdentity<T extends object> {
-  fieldName: DeepKeyOf<T, '/'>;
+  fieldName: DeepKeyOf<T>;
 }
 export interface ScoringFnApplication {
   boost: number;
@@ -46,19 +47,20 @@ export type IdentifiedScoringFn<T extends object> = ScoringFnIdentity<T> & Scori
 export interface ScoringProfile<T extends object> {
   name: string;
   text?: {
-    weights: Partial<Record<DeepKeyOf<T, '/'>, number>>;
+    weights: Partial<Record<DeepKeyOf<T>, number>>;
   };
   functions?: IdentifiedScoringFn<T>[];
   functionAggregation?: 'sum' | 'average' | 'minimum' | 'maximum' | 'firstMatching';
 }
 
 export type ScoringParams = Record<string, string[]>;
-export type ScoringStrategy = (value: any, base: number) => number;
-export type RawScoringStrategy = (params: ScoringParams) => (value: any, base: number) => number;
-export type ScoringStrategies<T extends object> = Partial<Record<DeepKeyOf<T, '/'>, ScoringStrategy>>;
-export type RawScoringStrategies<T extends object> = [DeepKeyOf<T, '/'>, RawScoringStrategy][];
+export type ScoringBases<T extends object> = { key: DeepKeyOf<T>, score: number }[];
 
-const nullStrategy: RawScoringStrategy = () => (_, base) => base;
+export type ScoringStrategy = (value: ParsedValue) => number;
+export type ScoringStrategies<T extends object> = (document: ParsedDocument<T>, bases: ScoringBases<T>) => number;
+
+export type RawScoringStrategy = (params: ScoringParams) => ScoringStrategy;
+export type RawScoringStrategies<T extends object> = (params: ScoringParams) => ScoringStrategies<T>;
 
 type InterpolationFn = (value: any, lower: any, upper: any) => number;
 
@@ -77,6 +79,24 @@ const logarithmicInterpolation: InterpolationFn = (value, lower, upper) => {
   return linearInterpolation(value, lower, upper) ** 2;
 };
 
+function limitL<T>(value: T, lower: T, upper: T, latch: boolean): T {
+  if (value < lower) {
+    return lower;
+  }
+  if (value > upper) {
+    return latch ? upper : lower;
+  }
+  return value;
+}
+function limitU<T>(value: T, lower: T, upper: T, latch: boolean): T {
+  if (value < lower) {
+    return latch ? lower : upper;
+  }
+  if (value > upper) {
+    return upper;
+  }
+  return value;
+}
 function toInterpolationFn(fn: ScoringFnApplication, latch: boolean): InterpolationFn {
   const limit = <T>(value: T, lower: T, upper: T) => lower < upper
     ? limitL(value, lower, upper, latch)
@@ -97,46 +117,25 @@ function toInterpolationFn(fn: ScoringFnApplication, latch: boolean): Interpolat
   }
 }
 
-function limitL<T>(value: T, lower: T, upper: T, latch: boolean): T {
-  if (value < lower) {
-    return lower;
-  }
-  if (value > upper) {
-    return latch ? upper : lower;
-  }
-  return value;
-}
-function limitU<T>(value: T, lower: T, upper: T, latch: boolean): T {
-  if (value < lower) {
-    return latch ? lower : upper;
-  }
-  if (value > upper) {
-    return upper;
-  }
-  return value;
-}
-function boostScore<T>(
-  value: T,
-  lower: T,
-  upper: T,
-  base: number,
-  interpolate: InterpolationFn,
-  factor: number,
-): number {
-  return base + base * interpolate(value, lower, upper) * (factor - 1);
+function createBooster<T>(interpolate: InterpolationFn, factor: number): (value: T, lower: T, upper: T) => number {
+  return (v, l, u) => 1 + interpolate(v, l, u) * (factor - 1)
 }
 
 function magnitudeFunctionStrategy(fn: ScoringMagnitudeFn): RawScoringStrategy {
   const { boostingRangeStart, boostingRangeEnd, constantBoostBeyondRange } = fn.magnitude;
-  const interpolate = toInterpolationFn(fn, constantBoostBeyondRange ?? false);
+  const boost = createBooster(toInterpolationFn(fn, constantBoostBeyondRange ?? false), fn.boost);
 
-  return () => (value: number, base) => boostScore(value, boostingRangeStart, boostingRangeEnd, base, interpolate, fn.boost);
+  return () => (value: ParsedValue) => sum(value.values.map(v => boost(
+    v as number,
+    boostingRangeStart,
+    boostingRangeEnd,
+  )));
 }
 
 const xsdDayTimeDurationRegex = /(?<neg>-)?P((?<days>\d+)D)?(T((?<hours>\d+)H)?((?<minutes>\d+)M)?((?<seconds>\d+(\.\d+)?)S)?)?/;
 function freshnessFunctionStrategy(fn: ScoringFreshnessFn): RawScoringStrategy {
   const boostingDurationMatch = fn.freshness.boostingDuration.match(xsdDayTimeDurationRegex);
-  const interpolate = toInterpolationFn(fn, false);
+  const boost = createBooster(toInterpolationFn(fn, false), fn.boost);
 
   if (!boostingDurationMatch?.groups) {
     throw new Error(`Invalid boostingDuration of ${fn.freshness.boostingDuration}`);
@@ -157,40 +156,41 @@ function freshnessFunctionStrategy(fn: ScoringFreshnessFn): RawScoringStrategy {
     const now = new Date();
     const window = boostingDurationWindow(now);
 
-    return (value: Date, base) => boostScore(value, window, now, base, interpolate, fn.boost);
+    return (value: ParsedValue) => sum(value.values.map(v => boost(
+      v as Date,
+      window,
+      now,
+    )));
   };
 }
 
 function distanceFunctionStrategy(fn: ScoringDistanceFn): RawScoringStrategy {
-  const interpolate = toInterpolationFn(fn, true);
+  const boost = createBooster(toInterpolationFn(fn, true), fn.boost);
 
   return (params) => {
     const referencePoint = params[fn.distance.referencePointParameter] ?? _throw(new Error(`Missing referencePointParameter with name of ${fn.distance.referencePointParameter} in query`));
     const to = makeGeoPoint(parseFloat(referencePoint[0]), parseFloat(referencePoint[1]));
 
-    return (value: GeoJSONPoint, base) => {
-      const from = makeGeoPoint(value.coordinates[0], value.coordinates[1]);
-      const distance = calculateDistance(from, to) / 1000;
-
-      return boostScore(distance, fn.distance.boostingDistance, 0, base, interpolate, fn.boost);
-    };
+    return (value: ParsedValue) => sum((value as ParsedValueGeo).points.map(from => boost(
+      calculateDistance(from, to) / 1000,
+      fn.distance.boostingDistance,
+      0,
+    )));
   };
 }
 
 function tagFunctionStrategy(fn: ScoringTagFn): RawScoringStrategy {
-  // Uses separators instead of \w to better cover extended alphabets.
-  const wordsRegex = /[^\s.!?:;,()\[\]{}<>\/\\]+/g;
-  const interpolate = toInterpolationFn(fn, true);
+  const boost = createBooster(toInterpolationFn(fn, true), fn.boost);
 
   return (params) => {
     const tags = params[fn.tag.tagsParameter] ?? _throw(new Error(`Missing tagsParameter with name of ${fn.tag.tagsParameter} in query`));
 
-    return (value: string, base) => {
-      const words = Array.from(value.matchAll(wordsRegex)).flatMap(m => Array.from(m));
-      const tagMatches = words.filter(w => tags.includes(w));
-
-      return boostScore(tagMatches.length, 0, words.length, base, interpolate, fn.boost);
-    };
+    return (value: ParsedValue) => sum((value as ParsedValueText).words.map(words =>
+      boost(
+        words.filter(w => tags.includes(w)).length,
+        0,
+        words.length,
+      )));
   };
 }
 
@@ -209,63 +209,58 @@ function toFunctionStrategy(fn: ScoringFn): RawScoringStrategy {
   }
 }
 
+type AggregateStrategy = (boosts: number[]) => number;
 function aggregateStrategies<T extends object>(
-  algorithm: ScoringProfile<T>['functionAggregation'],
-  strategies: RawScoringStrategy[]
-): RawScoringStrategy {
+  algorithm: ScoringProfile<T>['functionAggregation']
+): AggregateStrategy {
   switch (algorithm) {
     case undefined:
     case 'sum':
-      return (params) => (value, base) => sum(strategies.map(s => s(params)(value, base)));
+      return sum;
     case 'average':
-      return (params) => (value, base) => average(strategies.map(s => s(params)(value, base)));
+      return average;
     case 'minimum':
-      return (params) => (value, base) => min(strategies.map(s => s(params)(value, base)));
+      return min;
     case 'maximum':
-      return (params) => (value, base) => max(strategies.map(s => s(params)(value, base)));
+      return max;
     case 'firstMatching':
-      return strategies[0];
+      return (boosts) => boosts.find(b => b !== 1) ?? 1;
     default:
       _never(algorithm);
   }
 }
 
 function toStrategies<T extends object>(profile: ScoringProfile<T>): RawScoringStrategies<T> {
-  const weightByFields: [string, number][] = Object.entries(profile.text?.weights ?? {});
-  const functionsByFields = groupBy(profile.functions ?? [], v => v.fieldName);
+  const weightByFields: Partial<Record<DeepKeyOf<T>, number>>  = profile.text?.weights
+    ?? {};
+  const rawFunctionStrategies = profile.functions
+    ?.map(fn => ({ key: fn.fieldName, strategy: toFunctionStrategy(fn) }))
+    ?? [];
+  const aggregateStrategy = aggregateStrategies(profile.functionAggregation);
 
-  const fields: [string, { weight: number, functions: ScoringFn[] }][] = join(
-    weightByFields,
-    functionsByFields,
-      w => w[0],
-      f => f.key,
-    (w, f) => [
-      w?.[0] ?? f?.key ?? '',
-      { weight: w?.[1] ?? 1, functions: f?.results ?? [] },
-    ] as [string, { weight: number, functions: ScoringFn[] }],
-  );
+  return (params) => {
+    const functionStrategies = rawFunctionStrategies.map(fn => ({ key: fn.key, strategy: fn.strategy(params) }));
 
-  return fields.map(
-    (cur) => {
-      const weightStrategy: RawScoringStrategy = () => (_, base) => base * cur[1].weight;
-      const aggregatedFunctionStrategy = aggregateStrategies(
-        profile.functionAggregation,
-        cur[1].functions.map(toFunctionStrategy)
-      );
-
-      if (cur[1].weight !== 1 && cur[1].functions.length === 0) {
-        return [cur[0], weightStrategy];
-      } else if (cur[1].weight === 1 && cur[1].functions.length === 0) {
-        return [cur[0], nullStrategy];
-      } else if (cur[1].weight !== 1 && cur[1].functions.length !== 0) {
-        return [cur[0], (params) => (value, base) => aggregatedFunctionStrategy(params)(value, weightStrategy(params)(value, base))];
-      } else if (cur[1].weight === 1 && cur[1].functions.length !== 0) {
-        return [cur[0], aggregatedFunctionStrategy];
+    return (document, bases) => {
+      let score = 0;
+      for (const base of bases) {
+        const key = base.key as DeepKeyOf<T>;
+        score += base.score * (weightByFields[key] ?? 1);
       }
 
-      return _never(cur as never);
-    }
-  ) as RawScoringStrategies<T>;
+      const boosts = functionStrategies
+        .map(fn => ({ value: document[fn.key], strategy: fn.strategy }))
+        .filter((fn): fn is { value: NonNullable<typeof fn.value>, strategy: typeof fn.strategy } => fn.value != null)
+        .map(fn => fn.strategy(fn.value))
+        ?? [];
+
+      if (boosts.length === 0) {
+        return score;
+      }
+
+      return score * aggregateStrategy(boosts);
+    };
+  };
 }
 
 function parseParams(params: string[] | null): ScoringParams {
@@ -319,13 +314,12 @@ parseParams.fnSeparator = '-';
 parseParams.argSeparator = ',';
 parseParams.argQuote = "'";
 
-function applyParams<T extends object>(strategies: RawScoringStrategies<T>, params: ScoringParams): ScoringStrategies<T> {
-  return Object.fromEntries(strategies.map(([k, s]) => [k, s(params)])) as ScoringStrategies<T>;
-}
-
+const nullStrategy: ScoringStrategies<any> = (_, bases) => sum(bases.map(b => b.score));
 export class Scorer<T extends object> {
   public strategies: Record<string, RawScoringStrategies<T>>;
   public defaultStrategy: RawScoringStrategies<T> | null;
+
+  public static readonly nullStrategy = nullStrategy;
 
   constructor(
     readonly profiles: ScoringProfile<T>[],
@@ -336,8 +330,10 @@ export class Scorer<T extends object> {
   }
 
   public getScoringStrategies(profile: string | null, parameters: string[] | null ): ScoringStrategies<T> {
-    const params = parseParams(parameters);
-    const strategies = (profile && this.strategies[profile]) || this.defaultStrategy || [];
-    return applyParams<T>(strategies, params);
+    const strategies = profile
+      ? this.strategies[profile]
+      : this.defaultStrategy;
+
+    return strategies?.(parseParams(parameters)) ?? nullStrategy;
   }
 }

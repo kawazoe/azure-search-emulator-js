@@ -1,3 +1,5 @@
+import { _throw } from './_throw';
+
 const degreesInRadian = 57.29577951308232;
 const meanEarthRadius = 6_371_008.7714;
 
@@ -6,7 +8,16 @@ export function makeGeoJsonPoint(lon: number, lat: number): GeoJSONPoint {
   return { type: 'Point', coordinates: [lon, lat] };
 }
 export function isGeoJsonPoint(value: any): value is GeoJSONPoint {
-  return value && value.type === 'Point' && Array.isArray(value.coordinates) && value.coordinates.length === 2;
+  return value.type === 'Point'
+    && Array.isArray(value.coordinates)
+    && typeof value.coordinates[0] === 'number'
+    && typeof value.coordinates[1] === 'number';
+}
+
+export type WKTPoint = string;
+const wktPointRegex = /^POINT ?\((?<lon>\d+(\.\d+)?) (?<lat>\d+(\.\d+)?)\)$/;
+export function isWKTPoint(value: string): value is WKTPoint {
+  return !!value.match(wktPointRegex);
 }
 
 export type GeoPoint = { lon: number, lat: number };
@@ -25,6 +36,21 @@ export function makeGeoPoint(lon: number, lat: number): GeoPoint {
     lon: lon / degreesInRadian,
     lat: lat / degreesInRadian,
   };
+}
+export function makeGeoPointFromWKT(point: WKTPoint): GeoPoint {
+  const match = point.match(wktPointRegex) ?? _throw(new Error('Invalid WKT Point.'));
+  const lon = parseFloat(match.groups?.lon ?? '');
+  const lat = parseFloat(match.groups?.lat ?? '');
+  return makeGeoPoint(lon, lat);
+}
+export function makeGeoPointFromGeoJSON(point: GeoJSONPoint): GeoPoint {
+  return makeGeoPoint(point.coordinates[0], point.coordinates[1]);
+}
+export function makeGeoPointFromPojo(point: { lon: number, lat: number }): GeoPoint {
+  return makeGeoPoint(point.lon, point.lat);
+}
+export function isGeoPoint(value: any): value is GeoPoint {
+  return typeof value === 'object' && typeof value.lon === 'number' && typeof value.lat === 'number';
 }
 
 export type GeoPolygon = GeoPoint[];

@@ -7,12 +7,18 @@
  * This function converts any of those data sources to the same format.
  * @param value
  */
-export function normalizeValue(value: unknown): string[] {
+export function flatValue(value: unknown): unknown[] {
   function _normalizeValue(val: unknown) {
     return Array.isArray(val)
-      ? (val as unknown[]).flatMap(c => normalizeValue(c))
-      : [`${val}`]
+      ? (val as unknown[]).flatMap(c => flatValue(c))
+      : [val]
   }
 
   return Array.from(_normalizeValue(value));
+}
+
+// Uses separators instead of \w to better cover extended alphabets.
+const wordsRegex = /[^\s.!?:;,()\[\]{}<>\/\\]+/g;
+export function extractWords(value: string): string[] {
+  return Array.from(value.matchAll(wordsRegex)).flatMap(m => Array.from(m));
 }

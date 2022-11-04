@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ScoringProfile } from '../src';
+import type { ScoringProfile, ScoringBases } from '../src';
 import { Scorer } from '../src';
 
 import type { People } from './lib/mockSchema';
 import { addTime, subtractTime } from '../src/lib/dates';
-import { makeGeoJsonPoint } from '../src/lib/geoPoints';
+import { makeGeoJsonPoint } from '../src/lib/geo';
+import { peopleSchemaService } from './lib/mockSchema';
 
 const profileDoubleFullName: ScoringProfile<People> = {
   name: 'doubleFullName',
@@ -19,35 +20,57 @@ const profileDoubleFullName: ScoringProfile<People> = {
 describe('Scorer', () => {
   describe('profile selection', () => {
     it('should use the null strategy when no strategy is available', () => {
-      const sut = new Scorer([], null);
+      const sut = new Scorer<People>([], null);
+
+      const doc = peopleSchemaService.parseDocument({ id: '1' });
+      const bases: ScoringBases<People> = [
+        { key: 'id', score: 3 },
+        { key: 'fullName', score: 2 },
+      ];
 
       const strategies = sut.getScoringStrategies(null, null);
 
-      expect(strategies).toEqual({});
+      expect(strategies(doc, bases)).toBe(5);
     });
 
     it('should use the null strategy when no strategy is applied', () => {
       const sut = new Scorer([profileDoubleFullName], null);
 
+      const doc = peopleSchemaService.parseDocument({ id: '1' });
+      const bases: ScoringBases<People> = [
+        { key: 'id', score: 3 },
+        { key: 'fullName', score: 2 },
+      ];
+
       const strategies = sut.getScoringStrategies(null, null);
 
-      expect(strategies).toEqual({});
+      expect(strategies(doc, bases)).toBe(5);
     });
 
     it('should use the default strategy as fallback', () => {
       const sut = new Scorer([profileDoubleFullName], 'doubleFullName');
 
+      const doc = peopleSchemaService.parseDocument({ id: '1' });
+      const bases: ScoringBases<People> = [
+        { key: 'fullName', score: 2 },
+      ];
+
       const strategies = sut.getScoringStrategies(null, null);
 
-      expect(strategies).toEqual({ fullName: expect.any(Function) });
+      expect(strategies(doc, bases)).toBe(4);
     });
 
     it('should use the requested strategy', () => {
       const sut = new Scorer([profileDoubleFullName], null);
 
+      const doc = peopleSchemaService.parseDocument({ id: '1' });
+      const bases: ScoringBases<People> = [
+        { key: 'fullName', score: 2 },
+      ];
+
       const strategies = sut.getScoringStrategies('doubleFullName', null);
 
-      expect(strategies).toEqual({ fullName: expect.any(Function) });
+      expect(strategies(doc, bases)).toBe(4);
     });
   });
 
@@ -68,11 +91,23 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({
+          id: '1',
+          fullName: 'foo',
+          addresses: [
+            { kind: 'home' },
+          ],
+          phones: ['123'],
+        });
+        const bases: ScoringBases<People> = [
+          { key: 'fullName', score: 3 },
+          { key: 'addresses/kind', score: 4 },
+          { key: 'phones', score: 0.3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
-        expect(strats.fullName?.('foo', 3)).toBe(6);
-        expect(strats['addresses/kind']?.('home', 4)).toBe(14);
-        expect(strats.phones?.('123', 0.3)).toBe(0.15);
+        expect(strats(doc, bases)).toBe(20.15);
       });
     });
 
@@ -96,14 +131,25 @@ describe('Scorer', () => {
             'default',
           );
 
+          const far =     peopleSchemaService.parseDocument({ id: '1', ratio: 5 });
+          const lowNear = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
+          const low =     peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
+          const middle =  peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+
+          const bases: ScoringBases<People> = [
+            { key: 'ratio', score: 3 },
+          ];
+
           const strats = sut.getScoringStrategies(null, null);
 
-          expect(strats.ratio?.(5, 3)).toBe(3);
-          expect(strats.ratio?.(9, 3)).toBe(3);
-          expect(strats.ratio?.(10, 3)).toBe(3);
-          expect(strats.ratio?.(15, 3)).toBe(4.5);
-          expect(strats.ratio?.(20, 3)).toBe(6);
-          expect(strats.ratio?.(21, 3)).toBe(6);
+          expect(strats(far,     bases)).toBe(3);
+          expect(strats(lowNear, bases)).toBe(3);
+          expect(strats(low,     bases)).toBe(3);
+          expect(strats(middle,  bases)).toBe(4.5);
+          expect(strats(up,      bases)).toBe(6);
+          expect(strats(upNear,  bases)).toBe(6);
         });
 
         it('should reset to start when beyond range', () => {
@@ -123,13 +169,20 @@ describe('Scorer', () => {
             'default',
           );
 
+          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+
+          const bases: ScoringBases<People> = [
+            { key: 'ratio', score: 3 },
+          ];
+
           const strats = sut.getScoringStrategies(null, null);
 
-          expect(strats.ratio?.(20, 3)).toBe(6);
-          expect(strats.ratio?.(21, 3)).toBe(3);
+          expect(strats(up,      bases)).toBe(6);
+          expect(strats(upNear,  bases)).toBe(3);
         });
 
-        it('should boost numbers by interpolated value ', () => {
+        it('should boost numbers by inverted interpolated value ', () => {
           const sut = new Scorer<People>(
             [{
               name: 'default',
@@ -147,14 +200,25 @@ describe('Scorer', () => {
             'default',
           );
 
+          const far =     peopleSchemaService.parseDocument({ id: '1', ratio: 5 });
+          const lowNear = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
+          const low =     peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
+          const middle =  peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+
+          const bases: ScoringBases<People> = [
+            { key: 'ratio', score: 3 },
+          ];
+
           const strats = sut.getScoringStrategies(null, null);
 
-          expect(strats.ratio?.(5, 3)).toBe(6);
-          expect(strats.ratio?.(9, 3)).toBe(6);
-          expect(strats.ratio?.(10, 3)).toBe(6);
-          expect(strats.ratio?.(15, 3)).toBe(4.5);
-          expect(strats.ratio?.(20, 3)).toBe(3);
-          expect(strats.ratio?.(21, 3)).toBe(3);
+          expect(strats(far,     bases)).toBe(6);
+          expect(strats(lowNear, bases)).toBe(6);
+          expect(strats(low,     bases)).toBe(6);
+          expect(strats(middle,  bases)).toBe(4.5);
+          expect(strats(up,      bases)).toBe(3);
+          expect(strats(upNear,  bases)).toBe(3);
         });
 
         it('should reset to end when beyond range ', () => {
@@ -174,14 +238,25 @@ describe('Scorer', () => {
             'default',
           );
 
+          const far =     peopleSchemaService.parseDocument({ id: '1', ratio: 5 });
+          const lowNear = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
+          const low =     peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
+          const middle =  peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+
+          const bases: ScoringBases<People> = [
+            { key: 'ratio', score: 3 },
+          ];
+
           const strats = sut.getScoringStrategies(null, null);
 
-          expect(strats.ratio?.(5, 3)).toBe(3);
-          expect(strats.ratio?.(9, 3)).toBe(3);
-          expect(strats.ratio?.(10, 3)).toBe(6);
-          expect(strats.ratio?.(15, 3)).toBe(4.5);
-          expect(strats.ratio?.(20, 3)).toBe(3);
-          expect(strats.ratio?.(21, 3)).toBe(3);
+          expect(strats(far,     bases)).toBe(3);
+          expect(strats(lowNear, bases)).toBe(3);
+          expect(strats(low,     bases)).toBe(6);
+          expect(strats(middle,  bases)).toBe(4.5);
+          expect(strats(up,      bases)).toBe(3);
+          expect(strats(upNear,  bases)).toBe(3);
         });
       });
 
@@ -212,20 +287,25 @@ describe('Scorer', () => {
             'default',
           );
 
-          const past =    subtractTime(now, 2);
-          const p1dt1s =  subtractTime(now, 1, 0, 0, 1);
-          const p1d =     subtractTime(now, 1);
-          const pt12h =   subtractTime(now, 0, 12);
-          const future =  addTime(now, 0, 0, 0, 1);
+          const past =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 2) } });
+          const p1dt1s =  peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 1, 0, 0, 1) } });
+          const p1d =     peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 1) } });
+          const pt12h =   peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 0, 12) } });
+          const nowd =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: now } });
+          const future =  peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 0, 0, 0, 1) } });
+
+          const bases: ScoringBases<People> = [
+            { key: 'metadata/createdOn', score: 3 },
+          ];
 
           const strats = sut.getScoringStrategies(null, null);
 
-          expect(strats['metadata/createdOn']?.(past,   3)).toBeCloseTo(3, 5);
-          expect(strats['metadata/createdOn']?.(p1dt1s, 3)).toBeCloseTo(3, 5);
-          expect(strats['metadata/createdOn']?.(p1d,    3)).toBeCloseTo(3, 5);
-          expect(strats['metadata/createdOn']?.(pt12h,  3)).toBeCloseTo(4.5, 5);
-          expect(strats['metadata/createdOn']?.(now,    3)).toBeCloseTo(6, 5);
-          expect(strats['metadata/createdOn']?.(future, 3)).toBeCloseTo(3, 5);
+          expect(strats(past,   bases)).toBeCloseTo(3, 5);
+          expect(strats(p1dt1s, bases)).toBeCloseTo(3, 5);
+          expect(strats(p1d,    bases)).toBeCloseTo(3, 5);
+          expect(strats(pt12h,  bases)).toBeCloseTo(4.5, 5);
+          expect(strats(nowd,   bases)).toBeCloseTo(6, 5);
+          expect(strats(future, bases)).toBeCloseTo(3, 5);
         });
 
         it('should boost dates after now in a given duration', () => {
@@ -244,18 +324,23 @@ describe('Scorer', () => {
             'default',
           );
 
-          const pt12h =   subtractTime(now, 0, 12);
-          const npt12h =  addTime(now, 0, 12);
-          const np1d =    addTime(now, 1);
-          const np1dt1s = addTime(now, 1, 0, 0, 1);
+          const pt12h =   peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 0, 12) } });
+          const nowd =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: now } });
+          const npt12h =  peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 0, 12) } });
+          const np1d =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 1) } });
+          const np1dt1s = peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 1, 0, 0, 1) } });
+
+          const bases: ScoringBases<People> = [
+            { key: 'metadata/createdOn', score: 3 },
+          ];
 
           const strats = sut.getScoringStrategies(null, null);
 
-          expect(strats['metadata/createdOn']?.(pt12h,   3)).toBeCloseTo(3, 5);
-          expect(strats['metadata/createdOn']?.(now,     3)).toBeCloseTo(6, 5);
-          expect(strats['metadata/createdOn']?.(npt12h,  3)).toBeCloseTo(4.5, 5);
-          expect(strats['metadata/createdOn']?.(np1d,    3)).toBeCloseTo(3, 5);
-          expect(strats['metadata/createdOn']?.(np1dt1s, 3)).toBeCloseTo(3, 5);
+          expect(strats(pt12h,   bases)).toBeCloseTo(3, 5);
+          expect(strats(nowd,    bases)).toBeCloseTo(6, 5);
+          expect(strats(npt12h,  bases)).toBeCloseTo(4.5, 5);
+          expect(strats(np1d,    bases)).toBeCloseTo(3, 5);
+          expect(strats(np1dt1s, bases)).toBeCloseTo(3, 5);
         });
       });
 
@@ -277,19 +362,23 @@ describe('Scorer', () => {
             'default',
           );
 
-          const far = makeGeoJsonPoint(-71.20688089878229, 46.80772501699039);
-          const d100k200m = makeGeoJsonPoint(-72.55136962206396, 46.07725335123803);
-          const d100k = makeGeoJsonPoint(-72.55341125057537, 46.07613738135688);
-          const d50k = makeGeoJsonPoint(-73.05641549253124, 45.79361063088562);
-          const rp = makeGeoJsonPoint(-73.5543295037799, 45.50890239725307);
+          const far =       peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-71.20688089878229, 46.80772501699039) }] });
+          const d100k200m = peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-72.55136962206396, 46.07725335123803) }] });
+          const d100k =     peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-72.55341125057537, 46.07613738135688) }] });
+          const d50k =      peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-73.05641549253124, 45.79361063088562) }] });
+          const rp =        peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-73.5543295037799, 45.50890239725307) }] });
+
+          const bases: ScoringBases<People> = [
+            { key: 'addresses/location', score: 3 },
+          ];
 
           const strats = sut.getScoringStrategies(null, ['rp--73.5543295037799, 45.50890239725307']);
 
-          expect(strats['addresses/location']?.(far, 3)).toBeCloseTo(3, 4);
-          expect(strats['addresses/location']?.(d100k200m, 3)).toBeCloseTo(3, 4);
-          expect(strats['addresses/location']?.(d100k, 3)).toBeCloseTo(3, 4);
-          expect(strats['addresses/location']?.(d50k, 3)).toBeCloseTo(4.5, 4);
-          expect(strats['addresses/location']?.(rp, 3)).toBeCloseTo(6, 4);
+          expect(strats(far,       bases)).toBeCloseTo(3, 4);
+          expect(strats(d100k200m, bases)).toBeCloseTo(3, 4);
+          expect(strats(d100k,     bases)).toBeCloseTo(3, 4);
+          expect(strats(d50k,      bases)).toBeCloseTo(4.5, 4);
+          expect(strats(rp,        bases)).toBeCloseTo(6, 4);
         });
       });
 
@@ -310,14 +399,25 @@ describe('Scorer', () => {
             'default',
           );
 
+          const mock =         peopleSchemaService.parseDocument({ id: '1', fullName: 'mock' });
+          const mockfoo =      peopleSchemaService.parseDocument({ id: '1', fullName: 'mockfoo' });
+          const mock_foo =     peopleSchemaService.parseDocument({ id: '1', fullName: 'mock foo' });
+          const mock_foobar =  peopleSchemaService.parseDocument({ id: '1', fullName: 'mock foobar' });
+          const mock_foo_bar = peopleSchemaService.parseDocument({ id: '1', fullName: 'mock foo bar' });
+          const foo_bar =      peopleSchemaService.parseDocument({ id: '1', fullName: 'foo bar' });
+
+          const bases: ScoringBases<People> = [
+            { key: 'fullName', score: 3 },
+          ];
+
           const strats = sut.getScoringStrategies(null, ["t-foo,bar"]);
 
-          expect(strats.fullName?.('mock', 3)).toBeCloseTo(3, 4);
-          expect(strats.fullName?.('mockfoo', 3)).toBeCloseTo(3, 4);
-          expect(strats.fullName?.('mock foo', 3)).toBeCloseTo(4.5, 4);
-          expect(strats.fullName?.('mock foobar', 3)).toBeCloseTo(3, 4);
-          expect(strats.fullName?.('mock foo bar', 3)).toBeCloseTo(5, 4);
-          expect(strats.fullName?.('foo bar', 3)).toBeCloseTo(6, 4);
+          expect(strats(mock,         bases)).toBeCloseTo(3, 4);
+          expect(strats(mockfoo,      bases)).toBeCloseTo(3, 4);
+          expect(strats(mock_foo,     bases)).toBeCloseTo(4.5, 4);
+          expect(strats(mock_foobar,  bases)).toBeCloseTo(3, 4);
+          expect(strats(mock_foo_bar, bases)).toBeCloseTo(5, 4);
+          expect(strats(foo_bar,      bases)).toBeCloseTo(6, 4);
         });
       });
     });
@@ -340,11 +440,19 @@ describe('Scorer', () => {
           'default',
         );
 
+        const start =  peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
+        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+        const end =    peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
-        expect(strats.ratio?.(10, 3)).toBe(3);
-        expect(strats.ratio?.(15, 3)).toBe(4.5);
-        expect(strats.ratio?.(20, 3)).toBe(6);
+        expect(strats(start,  bases)).toBe(3);
+        expect(strats(middle, bases)).toBe(4.5);
+        expect(strats(end,    bases)).toBe(6);
       });
 
       it('should get max boost right away with constant', () => {
@@ -365,12 +473,21 @@ describe('Scorer', () => {
           'default',
         );
 
+        const before = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
+        const start =  peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
+        const end =    peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+        const after =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
-        expect(strats.ratio?.(9, 3)).toBe(3);
-        expect(strats.ratio?.(10, 3)).toBe(6);
-        expect(strats.ratio?.(20, 3)).toBe(6);
-        expect(strats.ratio?.(21, 3)).toBe(3);
+        expect(strats(before, bases)).toBe(3);
+        expect(strats(start,  bases)).toBe(6);
+        expect(strats(end,    bases)).toBe(6);
+        expect(strats(after,  bases)).toBe(3);
       });
 
       it('should get half boost half way with linear', () => {
@@ -391,9 +508,14 @@ describe('Scorer', () => {
           'default',
         );
 
+        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
-        expect(strats.ratio?.(15, 3)).toBe(4.5);
+        expect(strats(middle, bases)).toBe(4.5);
       });
 
       it('should get over half boost half way with quadratic', () => {
@@ -414,9 +536,14 @@ describe('Scorer', () => {
           'default',
         );
 
+        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
-        expect(strats.ratio?.(15, 3)).toBe(5.25);
+        expect(strats(middle, bases)).toBe(5.25);
       });
 
       it('should get under half boost half way with logarithmic', () => {
@@ -437,9 +564,14 @@ describe('Scorer', () => {
           'default',
         );
 
+        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
-        expect(strats.ratio?.(15, 3)).toBe(3.75);
+        expect(strats(middle, bases)).toBe(3.75);
       });
     });
 
@@ -472,11 +604,16 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
         const fn1 = 3.6;
         const fn2 = 7.8;
-        expect(strats.ratio?.(12, 3)).toBeCloseTo(fn1 + fn2, 5);
+        expect(strats(doc, bases)).toBeCloseTo(fn1 + fn2, 5);
       });
 
       it('should sum individual function results', () => {
@@ -508,11 +645,16 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
         const fn1 = 3.6;
         const fn2 = 7.8;
-        expect(strats.ratio?.(12, 3)).toBeCloseTo(fn1 + fn2, 5);
+        expect(strats(doc, bases)).toBeCloseTo(fn1 + fn2, 5);
       });
 
       it('should average individual function results', () => {
@@ -544,11 +686,16 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
         const fn1 = 3.6;
         const fn2 = 7.8;
-        expect(strats.ratio?.(12, 3)).toBeCloseTo((fn1 + fn2) / 2, 5);
+        expect(strats(doc, bases)).toBeCloseTo((fn1 + fn2) / 2, 5);
       });
 
       it('should take the minimum function result', () => {
@@ -580,11 +727,16 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
         const fn1 = 3.6;
         // const fn2 = 7.8;
-        expect(strats.ratio?.(12, 3)).toBeCloseTo(fn1, 5);
+        expect(strats(doc, bases)).toBeCloseTo(fn1, 5);
       });
 
       it('should take the maximum function result', () => {
@@ -616,11 +768,16 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
         // const fn1 = 3.6;
         const fn2 = 7.8;
-        expect(strats.ratio?.(12, 3)).toBeCloseTo(fn2, 5);
+        expect(strats(doc, bases)).toBeCloseTo(fn2, 5);
       });
 
       it('should take the first function result', () => {
@@ -652,11 +809,16 @@ describe('Scorer', () => {
           'default',
         );
 
+        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases<People> = [
+          { key: 'ratio', score: 3 },
+        ];
+
         const strats = sut.getScoringStrategies(null, null);
 
         const fn1 = 3.6;
         // const fn2 = 7.8;
-        expect(strats.ratio?.(12, 3)).toBeCloseTo(fn1, 5);
+        expect(strats(doc, bases)).toBeCloseTo(fn1, 5);
       });
     });
   });

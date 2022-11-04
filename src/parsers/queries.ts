@@ -16,16 +16,20 @@ import type {
   FacetResults,
   FacetActions
 } from './asts';
-import { FlatSchema, matchSchemaRequirement, SchemaMatcherRequirements } from '../services';
-import { normalizeValue } from '../services/utils';
+import type { FlatSchema, SchemaMatcherRequirements } from '../services';
+import { matchSchemaRequirement } from '../services';
+import { flatValue } from '../services/utils';
 import { toPaths } from './asts';
+import type {
+  GeoPoint,
+} from '../lib/geo';
 import {
   calculateDistance,
   intersects,
-  isGeoJsonPoint,
-  makeGeoPoint,
+  isGeoPoint,
+  makeGeoPointFromPojo,
   makeGeoPolygon
-} from '../lib/geoPoints';
+} from '../lib/geo';
 
 const mergeDeep = deepmerge;
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
@@ -49,11 +53,13 @@ function compare<T>(left: T, right: T): -1 | 0 | 1 {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function matchSchema(schema: FlatSchema, require: SchemaMatcherRequirements, fieldPath: string[]): [] | [string] {
+function matchSchema<T extends object>(schema: FlatSchema<T>, require: SchemaMatcherRequirements, fieldPath: string[]): [] | [string] {
   const result = matchSchemaRequirement(schema, fieldPath.join('/'), require);
   return result ? [result] : [];
 }
 
+// Used in jison parsers.
+// noinspection JSUnusedGlobalSymbols
 const dependencies = {
   mergeDeep,
   mergeSequence,
@@ -61,21 +67,23 @@ const dependencies = {
   getValue,
   getStruct,
   matchSchema,
+  makeGeoPointFromPojo,
+  makeGeoPolygon,
 };
 
 function fn_geo_distance<T>(
   input: T,
   fromVariable: { value: unknown, apply: (input: T) => unknown },
-  toPoint: { lon: number, lat: number },
+  toPoint: GeoPoint,
 ) {
   const from = fromVariable.apply(input);
-  if (!isGeoJsonPoint(from)) {
-    throw new Error(`Unsupported operation. Expected ${fromVariable.value} to be a GeoJSONPoint but got ${JSON.stringify(from)}`);
+  if (!isGeoPoint(from)) {
+    throw new Error(`Unsupported operation. Expected ${fromVariable.value} to be a GeoPoint but got ${JSON.stringify(from)}`);
   }
 
   return calculateDistance(
-    makeGeoPoint(from.coordinates[0], from.coordinates[1]),
-    makeGeoPoint(toPoint.lon, toPoint.lat),
+    from,
+    toPoint,
   ) / 1000;
 }
 function fn_geo_intersects<T>(
@@ -84,14 +92,11 @@ function fn_geo_intersects<T>(
   polygon: { lon: number, lat: number }[],
 ) {
   const point = pointVariable.apply(input);
-  if (!(isGeoJsonPoint(point))) {
-    throw new Error(`Unsupported operation. Expected ${pointVariable.value} to be a GeoJSONPoint but got ${JSON.stringify(point)}`);
+  if (!(isGeoPoint(point))) {
+    throw new Error(`Unsupported operation. Expected ${pointVariable.value} to be a GeoPoint but got ${JSON.stringify(point)}`);
   }
 
-  return intersects(
-    makeGeoPoint(point.coordinates[0], point.coordinates[1]),
-    makeGeoPolygon(...polygon.map(p => makeGeoPoint(p.lon, p.lat))),
-  );
+  return intersects(point, polygon);
 }
 function fn_search_score(input: Record<string, unknown>) {
   return input['@search.score'];
@@ -158,7 +163,7 @@ function fn_search_ismatchscoring(input: any, search: string, searchFields?: str
 }
 
 export type ParserResult<TAst, TActions> = TAst & Omit<TActions, 'canApply'> & {
-  canApply: (schema: FlatSchema) => string[]
+  canApply: <T extends object>(schema: FlatSchema<T>) => string[]
 };
 export type Parser<R> = {
   parse: (input: string) => R,
@@ -172,7 +177,7 @@ export const filter: FilterParser = {
     _filter.parse(input, ast, dependencies, { fn_geo_distance, fn_geo_intersects, fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
     return {
       ...ast,
-      canApply: (schema: FlatSchema) => ast.canApply(schema, 'filterable'),
+      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'filterable'),
     };
   }
 };
@@ -185,7 +190,7 @@ export const orderBy: OrderByParser = {
     _orderBy.parse(input, ast, dependencies, { fn_search_score });
     return {
       ...ast,
-      canApply: (schema: FlatSchema) => ast.canApply(schema, 'sortable'),
+      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'sortable'),
     };
   }
 };
@@ -198,7 +203,7 @@ export const select: SelectParser = {
     _select.parse(input, ast, dependencies, {});
     return {
       ...ast,
-      canApply: (schema: FlatSchema) => ast.canApply(schema, 'retrievable'),
+      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'retrievable'),
     };
   }
 };
@@ -211,7 +216,7 @@ export const search: SearchParser = {
     _select.parse(input, ast, dependencies, {});
     return {
       ...ast,
-      canApply: (schema: FlatSchema) => ast.canApply(schema, 'searchable'),
+      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'searchable'),
       toPaths: () => toPaths(ast),
     };
   }
@@ -278,12 +283,12 @@ export const facet: FacetParser = {
 
     const fieldPath = field.split('/');
 
-    function canApply(schema: FlatSchema) {
+    function canApply<T extends object>(schema: FlatSchema<T>) {
       const result = matchSchemaRequirement(schema, field, 'facetable');
       return result ? [result] : [];
     }
 
-    function apply<T>(accumulator: FacetResults, input: T) {
+    function apply<T extends object>(accumulator: FacetResults, input: T) {
       if (!accumulator[field]) {
         accumulator[field] = {
           params,
@@ -292,7 +297,7 @@ export const facet: FacetParser = {
       }
       const acc = accumulator[field];
 
-      const value = normalizeValue(getValue(input, fieldPath));
+      const value = flatValue(getValue(input, fieldPath)).map(v => `${v}`);
       for (const val of value) {
         const counter = acc.results[val];
         acc.results[val] = counter ? counter + 1 : 1;

@@ -13,7 +13,7 @@ import {
   useOrderBy,
   usePagingMiddleware,
   useSearchScoring,
-  createHighlightSuggestionStrategy
+  createHighlightSuggestionStrategy, useScoringProfiles
 } from './searchBackend';
 import { Scorer } from './scorer';
 
@@ -69,13 +69,15 @@ export class SearchEngine<T extends object> {
           postTag: request.highlightPostTag ?? '</em>',
           maxPadding: 30,
         }),
+      })] : []),
+      ...(request.facets ? [useFacetExtraction<T, Keys>(request.facets)] : []),
+      ...(request.select ? [useSelect<T, Keys>(request.select)] : []),
+      useScoringProfiles<T, Keys>({
         scoringStrategies: this.scorer.getScoringStrategies(
           request.scoringProfile ?? null,
           request.scoringParameters ?? null
         ),
-      })] : []),
-      ...(request.facets ? [useFacetExtraction<T, Keys>(request.facets)] : []),
-      ...(request.select ? [useSelect<T, Keys>(request.select)] : []),
+      }),
       useSearchResult<T, Keys>(),
     ];
 

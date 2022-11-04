@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { DataStore } from '../src';
 
 import type { People } from './lib/mockSchema';
-import { peopleSchemaService } from './lib/mockSchema';
+import { hydrateParsedProxies, peopleSchemaService } from './lib/mockSchema';
+import { makeGeoPoint } from '../src/lib/geo';
 
 describe('DataStore', () => {
   describe('postDocuments', () => {
@@ -15,7 +16,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original' }],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'original'}]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'original' },
+          parsed: expect.anything(),
+        }]);
       })
 
       it('should replace the document with a reused key', () => {
@@ -28,7 +33,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'replaced' }],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'replaced'}]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'replaced' },
+          parsed: expect.anything(),
+        }]);
       });
 
       it('should replace the document when batched with a reused key', () => {
@@ -41,7 +50,11 @@ describe('DataStore', () => {
           ],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'replaced'}]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'replaced' },
+          parsed: expect.anything(),
+        }]);
       });
     });
 
@@ -66,7 +79,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'merge', id: 'abc', fullName: 'replaced', ratio: 0.5 }],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 }]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
+          parsed: expect.anything(),
+        }]);
       });
 
       it('should replace the document when batched with a reused key', () => {
@@ -79,7 +96,11 @@ describe('DataStore', () => {
           ],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5}]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
+          parsed: expect.anything(),
+        }]);
       });
     });
 
@@ -91,7 +112,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'mergerOrUpload', id: 'abc', fullName: 'original' }],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'original'}]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'original' },
+          parsed: expect.anything(),
+        }]);
       })
 
       it('should merge fields with a reused key', () => {
@@ -104,7 +129,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'mergerOrUpload', id: 'abc', fullName: 'replaced', ratio: 0.5 }],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 }]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
+          parsed: expect.anything(),
+        }]);
       });
 
       it('should replace the document when batched with a reused key', () => {
@@ -117,7 +146,11 @@ describe('DataStore', () => {
           ],
         });
 
-        expect(sut.documents).toEqual([{id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5}]);
+        expect(sut.documents).toEqual([{
+          key: 'abc',
+          original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
+          parsed: expect.anything(),
+        }]);
       });
     });
 
@@ -132,7 +165,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'delete', id: 'abc' }],
         });
 
-        expect(sut.documents).toEqual([{id: 'keep' }]);
+        expect(sut.documents).toEqual([{
+          key: 'keep',
+          original: {id: 'keep' },
+          parsed: expect.anything(),
+        }]);
       });
 
       it('should remove the document with an existing key', () => {
@@ -148,7 +185,11 @@ describe('DataStore', () => {
           value: [{ '@search.action': 'delete', id: 'abc' }],
         });
 
-        expect(sut.documents).toEqual([{id: 'keep' }]);
+        expect(sut.documents).toEqual([{
+          key: 'keep',
+          original: {id: 'keep' },
+          parsed: expect.anything(),
+        }]);
       });
 
       it('should remove the document with an existing key when batched', () => {
@@ -162,7 +203,87 @@ describe('DataStore', () => {
           ],
         });
 
-        expect(sut.documents).toEqual([{id: 'keep' }]);
+        expect(sut.documents).toEqual([{
+          key: 'keep',
+          original: {id: 'keep' },
+          parsed: expect.anything(),
+        }]);
+      });
+    });
+
+    describe('parsing', () => {
+      it('should parse incoming documents', () => {
+        const sut = new DataStore<People>(peopleSchemaService);
+
+        sut.postDocuments({
+          value: [{
+            '@search.action': 'upload',
+            id: 'abc',
+            fullName: "Mister Mac'Lown de Montreal, protector of (de) tests",
+            income: 500,
+            addresses: [
+              { kind: 'home', location: { type: 'Point', coordinates: [1, 2] } },
+              { kind: 'work', location: 'POINT (3 4)' },
+            ]
+          }],
+        });
+
+        const document = sut.documents[0];
+
+        hydrateParsedProxies(document.parsed);
+
+        console.log(document)
+
+        expect(document).toEqual({
+          key: 'abc',
+          original: expect.anything(),
+          parsed: {
+            id: {
+              type: 'Edm.String',
+              kind: 'text',
+              values: ['abc'],
+              normalized: ['abc'],
+              words: [['abc']],
+            },
+            fullName: {
+              type: 'Edm.String',
+              kind: 'text',
+              values: ["Mister Mac'Lown de Montreal, protector of (de) tests"],
+              normalized: ["Mister Mac'Lown de Montreal, protector of (de) tests"],
+              words: [['Mister', "Mac'Lown", 'de', 'Montreal', 'protector', 'of', 'de', 'tests']]
+            },
+            income: {
+              type: 'Edm.Int64',
+              kind: 'generic',
+              values: [500],
+              normalized: ['500']
+            },
+            addresses: {
+              type: 'Collection(Edm.ComplexType)',
+              kind: 'raw',
+              values: [
+                { kind: 'home', location: { type: 'Point', coordinates: [1, 2] } },
+                { kind: 'work', location: 'POINT (3 4)' },
+              ],
+            },
+            'addresses/kind': {
+              type: 'Edm.String',
+              kind: 'text',
+              values: ['home', 'work'],
+              normalized: ['home', 'work'],
+              words: [['home'], ['work']],
+            },
+            'addresses/location': {
+              type: 'Edm.GeographyPoint',
+              kind: 'geo',
+              values: [{ type: 'Point', coordinates: [1, 2] }, 'POINT (3 4)'],
+              points: [
+                makeGeoPoint(1, 2),
+                makeGeoPoint(3, 4),
+              ],
+            },
+          },
+        });
       });
     });
   });

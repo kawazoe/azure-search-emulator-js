@@ -1,7 +1,18 @@
-import { KeyFieldDefinition, Schema, SchemaService, Suggester } from '../../src';
+import type {
+  KeyFieldDefinition,
+  ParsedDocument,
+  Schema,
+  StoredDocument,
+  Suggester
+} from '../../src';
+import {
+  SchemaService,
+} from '../../src';
 
 import { _throw } from '../../src/lib/_throw';
-import { GeoJSONPoint } from '../../src/lib/geoPoints';
+import type { GeoJSONPoint, WKTPoint } from '../../src/lib/geo';
+import { _never } from '../../src/lib/_never';
+import type { DeepKeyOf } from '../../src/lib/types';
 
 export type People = {
   id: string,
@@ -9,7 +20,7 @@ export type People = {
   addresses?: {
     parts?: string,
     kind?: string,
-    location?: GeoJSONPoint
+    location?: GeoJSONPoint | WKTPoint
   }[],
   phones?: string[],
   ratio?: number,
@@ -53,3 +64,28 @@ const peopleSuggesters: Suggester[] = [
   }
 ];
 export const peopleSuggesterProvider = (name: string) => peopleSuggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
+
+export function peopleToStoredDocument(document: People): StoredDocument<People> {
+  return {
+    key: (document as Record<string, unknown>)[peopleSchemaKey.name] as string,
+    original: document,
+    parsed: peopleSchemaService.parseDocument(document),
+  };
+}
+
+export function hydrateParsedProxies<T extends object>(document: ParsedDocument<T>): void {
+  for (const key in document) {
+    const target = document[key as DeepKeyOf<T>] ?? _never(document as never);
+
+    if (target.kind === 'text') {
+      target.normalized;
+      target.words;
+    }
+    if (target.kind === 'geo') {
+      target.points;
+    }
+    if (target.kind === 'generic') {
+      target.normalized;
+    }
+  }
+}

@@ -89,7 +89,7 @@ export type FacetParamsAst = {
 export type FacetResult = { params: FacetParamsAst, results: Record<string, number> };
 export type FacetResults = Record<string, FacetResult>;
 export type FacetActions = {
-  canApply: (schema: FlatSchema) => string[],
-  apply: <T>(accumulator: FacetResults, input: T) => FacetResults,
+  canApply: <T extends object>(schema: FlatSchema<T>) => string[],
+  apply: <T extends object>(accumulator: FacetResults, input: T) => FacetResults,
 };
 export type FacetAst = { field: string, params: FacetParamsAst };

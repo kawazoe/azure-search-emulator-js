@@ -9,8 +9,9 @@ import {
   useSearchScoring,
   useAutocompleteResult,
   createAutocompleteSuggestionStrategy,
-  useStripScore
+  useStripScore, useScoringProfiles
 } from './searchBackend';
+import { Scorer } from './scorer';
 
 export interface AutoCompleteRequest {
   autocompleteMode?: AutocompleteModes;
@@ -35,8 +36,8 @@ const maxPageSize = 100;
 
 export class AutocompleteEngine<T extends object> {
   constructor(
-    private backend: SearchBackend<T>,
-    private suggesterProvider: (name: string) => Suggester,
+    private readonly backend: SearchBackend<T>,
+    private readonly suggesterProvider: (name: string) => Suggester,
   ) {
   }
 
@@ -52,8 +53,8 @@ export class AutocompleteEngine<T extends object> {
           postTag: request.highlightPostTag ?? '',
           mode: request.autocompleteMode ?? 'oneTerm',
         }),
-        scoringStrategies: {},
       })] : []),
+      useScoringProfiles<T, '*'>({ scoringStrategies: Scorer.nullStrategy }),
       useAutocompleteResult<T, '*'>(),
     ];
 
