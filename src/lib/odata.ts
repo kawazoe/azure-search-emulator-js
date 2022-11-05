@@ -2,6 +2,7 @@ import { map } from './objects';
 import type { DeepKeyOf, DeepPick } from './types';
 
 export * from './types';
+
 export type ODataSelect<T extends object> = DeepKeyOf<T> | '*';
 export type ODataSelectResult<T extends object, Keys extends ODataSelect<T>> = DeepPick<T, Keys extends DeepKeyOf<T> ? Keys : DeepKeyOf<T>>;
 

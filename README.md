@@ -242,4 +242,32 @@ service to spin up on your dev machine when testing, or demoing, your applicatio
 - Validation against queries made by the official client.
 - Support storing/loading the index to/from disk when running on the server.
 - Switch the backend to a full text search engine with Lucene syntax.
+- Shard data across multiple workers (multi-threaded queries).
 - Maybe more features?
+
+## Benchmarks
+```
+describe SearchEngine
+    bench large query
+    => total: 2234.81ms | samples/runs: 93/100 | ops/sec: 44.75 ±4.72ms @ 3σ
+       mean: 22.35ms | mode: 20ms | min: 18.13ms/18.13ms | max: 27.58ms/45.75ms
+describe SuggestEngine
+    bench large query
+    => total: 1688.16ms | samples/runs: 93/100 | ops/sec: 59.24 ±1.81ms @ 3σ
+       mean: 16.88ms | mode: 16.4ms | min: 15.13ms/15.13ms | max: 18.74ms/23.54ms
+describe AutocompleteEngine
+    bench large query
+    => total: 1427.3ms | samples/runs: 94/100 | ops/sec: 70.06 ±1.15ms @ 3σ
+       mean: 14.27ms | mode: 14.3ms | min: 13.05ms/13.05ms | max: 15.35ms/18.99ms
+```
+
+### Hardware
+```
+Garuda Linux
+Kernel Version: 6.0.6-zen1-1-zen (64-bit)
+Processors: 32 x Intel Xeon CPU E5-2687W v2 @3.4GHz
+Memory: 64 GB of DDR3-1866 ECC
+```
+
+While the code does not yet make use of workers, it is planned to shard the data across multiple workers to improve
+performance in the future, so the exact hardware configuration might be valuable.

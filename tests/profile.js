@@ -159,7 +159,7 @@ function bench(name, fn, { warmupIterations, iterations, sigma } = { warmupItera
 
   const mode = continuousMode(samples, (s, d) => Math.round(s * (10 ** d)) / (10 ** d), 0.5 * sigma, 5);
     
-    console.info(render`=> total: ${total}ms | sample/runs: ${samples.length}/${runs.length} | ops/sec: ${1000 / mean} ±${sRange / 2}ms @ ${sigma}σ`);
+    console.info(render`=> total: ${total}ms | samples/runs: ${samples.length}/${runs.length} | ops/sec: ${1000 / mean} ±${sRange / 2}ms @ ${sigma}σ`);
     console.info(render`   mean: ${mean}ms | mode: ${mode}ms | min: ${min}ms/${sMin}ms | max: ${sMax}ms/${max}ms`);
   }});
 
