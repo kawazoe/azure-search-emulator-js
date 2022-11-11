@@ -1,21 +1,21 @@
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import type { SearchFacetBase, SearchResult } from './searchBackend';
-import {
-  SearchBackend,
-  useCount,
-  useCoverage,
-  useSearchResult,
-  useSelect,
-  useFacetExtraction,
-  useFacetTransformation,
-  useFilterScoring,
-  useOrderBy,
-  usePagingMiddleware,
-  useSearchScoring,
-  createHighlightSuggestionStrategy, useScoringProfiles
-} from './searchBackend';
+import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
+
+import { useFiltering } from './middlewares/reducer/filtering';
+import { createHighlightSuggestionStrategy, useLuceneSearch } from './middlewares/reducer/luceneSearch';
+import { useFacetExtraction } from './middlewares/reducer/facetExtraction';
+import { useSelect } from './middlewares/reducer/select';
+import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
+import { useSearchResult } from './middlewares/reducer/searchResult';
+import { useOrderBy } from './middlewares/transformer/orderBy';
+import { useCount } from './middlewares/transformer/count';
+import { useCoverage } from './middlewares/transformer/coverage';
+import { useFacetTransformation } from './middlewares/transformer/facetTransformation';
+import { usePaging } from './middlewares/transformer/paging';
+import { createSimpleQueryStrategy } from './analyzerService';
 
 export interface SearchDocumentsRequest<T extends object, Keys extends ODataSelect<T> | string> {
   count?: boolean;
@@ -59,10 +59,13 @@ export class SearchEngine<T extends object> {
 
   public search<Keys extends ODataSelect<T>>(request: SearchDocumentsRequest<T, Keys>): SearchDocumentsPageResult<ODataSelectResult<T, Keys>> {
     const documentMiddlewares = [
-      ...(request.filter ? [useFilterScoring<T, Keys>(request.filter)] : []),
-      ...(request.search ? [useSearchScoring<T, Keys>({
-        search: request.search,
+      ...(request.filter ? [useFiltering<T, Keys>(request.filter)] : []),
+      ...(request.search ? [useLuceneSearch<T, Keys>({
         searchFields: request.searchFields ?? '*',
+        queryingStrategy: createSimpleQueryStrategy({
+          search: request.search,
+          searchMode: request.searchMode ?? 'any'
+        }),
         suggestionStrategy: createHighlightSuggestionStrategy<T>({
           highlight: request.highlight ?? '',
           preTag: request.highlightPreTag ?? '<em>',
@@ -86,7 +89,7 @@ export class SearchEngine<T extends object> {
       ...(request.count ? [useCount<T, Keys>()] : []),
       ...(request.minimumCoverage ? [useCoverage<T, Keys>()] : []),
       ...(request.facets ? [useFacetTransformation<T, Keys>()] : []),
-      usePagingMiddleware<T, Keys>({ skip: request.skip ?? 0, top: request.top ?? defaultPageSize, maxPageSize, request })
+      usePaging<T, Keys>({ skip: request.skip ?? 0, top: request.top ?? defaultPageSize, maxPageSize, request })
     ];
 
     return this.backend.search({ documentMiddlewares, resultsMiddlewares }) as SearchDocumentsPageResult<ODataSelectResult<T, Keys>>;

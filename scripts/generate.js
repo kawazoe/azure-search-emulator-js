@@ -11,3 +11,4 @@ function generate(source, destination) {
 generate('src/query-filter.jison', 'src/parsers/query-filter.js');
 generate('src/query-orderby.jison', 'src/parsers/query-orderby.js');
 generate('src/query-select.jison', 'src/parsers/query-select.js');
+generate('src/query-simple.jison', 'src/parsers/query-simple.js');

@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { DataStore } from '../src';
 
 import type { People } from './lib/mockSchema';
-import { hydrateParsedProxies, peopleSchemaService } from './lib/mockSchema';
+import { peopleAnalyzer, peopleSchemaService } from './lib/mockSchema';
 import { makeGeoPoint } from '../src/lib/geo';
 
 describe('DataStore', () => {
   describe('postDocuments', () => {
     describe('upload', () => {
       it('should add the document with new key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original' }],
@@ -19,12 +19,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'original' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       })
 
       it('should replace the document with a reused key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original' }],
@@ -36,12 +36,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'replaced' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
 
       it('should replace the document when batched with a reused key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [
@@ -53,14 +53,14 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'replaced' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
     });
 
     describe('merge', () => {
       it('should fail with new key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         const action = () => sut.postDocuments({
           value: [{ '@search.action': 'merge', id: 'abc', fullName: 'original' }],
@@ -70,7 +70,7 @@ describe('DataStore', () => {
       })
 
       it('should merge fields with a reused key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original', income: 500 }],
@@ -82,12 +82,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
 
       it('should replace the document when batched with a reused key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [
@@ -99,14 +99,14 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
     });
 
     describe('mergeOrUpload', () => {
       it('should add the document with new key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{ '@search.action': 'mergerOrUpload', id: 'abc', fullName: 'original' }],
@@ -115,12 +115,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'original' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       })
 
       it('should merge fields with a reused key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'abc', fullName: 'original', income: 500 }],
@@ -132,12 +132,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
 
       it('should replace the document when batched with a reused key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [
@@ -149,14 +149,14 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'abc',
           original: { id: 'abc', fullName: 'replaced', income: 500, ratio: 0.5 },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
     });
 
     describe('delete', () => {
       it('should fail with new key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{ '@search.action': 'upload', id: 'keep' }],
@@ -168,12 +168,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'keep',
           original: {id: 'keep' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
 
       it('should remove the document with an existing key', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [
@@ -188,12 +188,12 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'keep',
           original: {id: 'keep' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
 
       it('should remove the document with an existing key when batched', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [
@@ -206,14 +206,14 @@ describe('DataStore', () => {
         expect(sut.documents).toEqual([{
           key: 'keep',
           original: {id: 'keep' },
-          parsed: expect.anything(),
+          analyzed: expect.anything(),
         }]);
       });
     });
 
     describe('parsing', () => {
       it('should parse incoming documents', () => {
-        const sut = new DataStore<People>(peopleSchemaService);
+        const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
         sut.postDocuments({
           value: [{
@@ -228,53 +228,88 @@ describe('DataStore', () => {
           }],
         });
 
-        const document = sut.documents[0];
-
-        hydrateParsedProxies(document.parsed);
-
-        console.log(document)
-
-        expect(document).toEqual({
+        expect(sut.documents[0]).toEqual({
           key: 'abc',
           original: expect.anything(),
-          parsed: {
+          analyzed: {
             id: {
-              type: 'Edm.String',
-              kind: 'text',
+              kind: 'fullText',
               values: ['abc'],
               normalized: ['abc'],
-              words: [['abc']],
+              entries: [[{ value: 'abc', index: 0, rindex: 3 }]],
+              length: 3,
             },
             fullName: {
-              type: 'Edm.String',
-              kind: 'text',
+              kind: 'fullText',
               values: ["Mister Mac'Lown de Montreal, protector of (de) tests"],
               normalized: ["Mister Mac'Lown de Montreal, protector of (de) tests"],
-              words: [['Mister', "Mac'Lown", 'de', 'Montreal', 'protector', 'of', 'de', 'tests']]
+              entries: [[
+                {
+                  value: "mister",
+                  index: 0,
+                  rindex: 6,
+                },
+                {
+                  value: "mac",
+                  index: 7,
+                  rindex: 10,
+                },
+                {
+                  value: "lown",
+                  index: 11,
+                  rindex: 15,
+                },
+                {
+                  value: "de",
+                  index: 16,
+                  rindex: 18,
+                },
+                {
+                  value: "montreal",
+                  index: 19,
+                  rindex: 27,
+                },
+                {
+                  value: "protector",
+                  index: 29,
+                  rindex: 38,
+                },
+                {
+                  value: "of",
+                  index: 39,
+                  rindex: 41,
+                },
+                {
+                  value: "de",
+                  index: 43,
+                  rindex: 45,
+                },
+                {
+                  value: "tests",
+                  index: 47,
+                  rindex: 52,
+                },
+              ]],
+              length: 41,
             },
             income: {
-              type: 'Edm.Int64',
-              kind: 'generic',
+              kind: 'fullText',
               values: [500],
-              normalized: ['500']
-            },
-            addresses: {
-              type: 'Collection(Edm.ComplexType)',
-              kind: 'raw',
-              values: [
-                { kind: 'home', location: { type: 'Point', coordinates: [1, 2] } },
-                { kind: 'work', location: 'POINT (3 4)' },
-              ],
+              normalized: ['500'],
+              entries: [[{ value: '500', index: 0, rindex: 3 }]],
+              length: 3,
             },
             'addresses/kind': {
-              type: 'Edm.String',
-              kind: 'text',
+              kind: 'fullText',
               values: ['home', 'work'],
               normalized: ['home', 'work'],
-              words: [['home'], ['work']],
+              entries: [
+                [{ value: 'home', index: 0, rindex: 4 }],
+                [{ value: 'work', index: 0, rindex: 4 }]
+              ],
+              length: 8,
             },
             'addresses/location': {
-              type: 'Edm.GeographyPoint',
               kind: 'geo',
               values: [{ type: 'Point', coordinates: [1, 2] }, 'POINT (3 4)'],
               points: [
@@ -289,7 +324,7 @@ describe('DataStore', () => {
   });
 
   it('countDocuments', () => {
-    const sut = new DataStore<People>(peopleSchemaService);
+    const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
     sut.postDocuments({
       value: [
@@ -305,7 +340,7 @@ describe('DataStore', () => {
 
   describe('findDocument', () => {
     it('should fail if the document is missing', () => {
-      const sut = new DataStore<People>(peopleSchemaService);
+      const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
       const action = () => sut.findDocument({ key: 'missing' });
 
@@ -313,7 +348,7 @@ describe('DataStore', () => {
     });
 
     it('should return the document when matched', () => {
-      const sut = new DataStore<People>(peopleSchemaService);
+      const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
       sut.postDocuments({
         value: [{ '@search.action': 'upload', id: 'a', fullName: 'test', ratio: 0.5 }],
@@ -325,7 +360,7 @@ describe('DataStore', () => {
     });
 
     it('should apply the select query', () => {
-      const sut = new DataStore<People>(peopleSchemaService);
+      const sut = new DataStore<People>(peopleSchemaService, peopleAnalyzer);
 
       sut.postDocuments({
         value: [{ '@search.action': 'upload', id: 'a', fullName: 'test', ratio: 0.5 }],

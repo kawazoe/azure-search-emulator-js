@@ -4,7 +4,9 @@ import { createHttp404 } from '../lib/http';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import { select } from '../parsers';
-import { KeyFieldDefinition, ParsedDocument, SchemaService } from './schema';
+import { SchemaService } from './schema';
+import type { AnalyzedDocument } from './analyzerService';
+import { AnalyzerService } from './analyzerService';
 
 export interface FindDocumentRequest<T extends object, Keys extends ODataSelect<T>> {
   key: string;
@@ -17,14 +19,10 @@ export interface PostDocumentsRequest<TDoc> {
   } & TDoc)[];
 }
 
-export type StoredDocument<T extends object> = { key: string, original: T, parsed: ParsedDocument<T> };
-
-function toStoredDocument<T extends object>(document: T, key: KeyFieldDefinition, parse: (document: T) => any): StoredDocument<T> {
-  return {
-    key: (document as Record<string, unknown>)[key.name] as string,
-    original: document,
-    parsed: parse(document),
-  };
+export interface StoredDocument<T extends object> {
+  key: string,
+  original: T,
+  analyzed: AnalyzedDocument,
 }
 
 function assignStoredDocument<T extends object>(left: StoredDocument<T>, right: StoredDocument<T>): StoredDocument<T> {
@@ -33,7 +31,7 @@ function assignStoredDocument<T extends object>(left: StoredDocument<T>, right: 
   }
 
   Object.assign(left.original, right.original);
-  Object.assign(left.parsed, right.parsed);
+  Object.assign(left.analyzed, right.analyzed);
 
   return left;
 }
@@ -42,7 +40,8 @@ export class DataStore<T extends object> {
   public readonly documents: StoredDocument<T>[] = [];
 
   constructor(
-    public readonly schema: SchemaService<T>,
+    private readonly schemaService: SchemaService<T>,
+    private readonly analyzer: AnalyzerService<T>,
   ) {
   }
 
@@ -62,7 +61,7 @@ export class DataStore<T extends object> {
 
   public postDocuments(documents: PostDocumentsRequest<T>) {
     for (const { '@search.action': action, ...request } of documents.value) {
-      const document = toStoredDocument(this.schema.assertSchema(request), this.schema.keyField, this.schema.parseDocument);
+      const document = this.toStoredDocument(request);
 
       switch (action) {
         case 'upload':
@@ -103,4 +102,15 @@ export class DataStore<T extends object> {
   public countDocuments(): number {
     return this.documents.length;
   }
+
+  private toStoredDocument(candidate: Record<string, unknown>): StoredDocument<T> {
+    const document = this.schemaService.assertDocumentSchema(candidate);
+
+    return {
+      key: (document as Record<string, unknown>)[this.schemaService.keyField.name] as string,
+      original: document,
+      analyzed: this.analyzer.analyzeDocument(document),
+    };
+  }
+
 }

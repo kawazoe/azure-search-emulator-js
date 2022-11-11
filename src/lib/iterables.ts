@@ -138,6 +138,29 @@ export function join<L, R, Result, LK = keyof L, RK = keyof R>(
 }
 join.skip = joinSkip;
 
+export function distribute<T>(source: Iterable<T>, buckets: 1): [T][];
+export function distribute<T>(source: Iterable<T>, buckets: 2): [T, T?][];
+export function distribute<T>(source: Iterable<T>, buckets: 3): [T, T?, T?][];
+export function distribute<T>(source: Iterable<T>, buckets: 4): [T, T?, T?, T?][];
+export function distribute<T>(source: Iterable<T>, buckets: number): (T | undefined)[][] {
+  const result = [];
+  let bucket = [];
+  for (const value of source) {
+    bucket.push(value);
+
+    if (bucket.length >= buckets) {
+      result.push(bucket);
+      bucket = [];
+    }
+  }
+
+  if (bucket.length > 0) {
+    result.push(bucket);
+  }
+
+  return result;
+}
+
 export function sum(source: Iterable<number>): number {
   let acc = 0;
   for (const n of source) {

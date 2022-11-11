@@ -4,8 +4,8 @@ import { orderBy as parser } from '../src/parsers';
 
 describe('query-select', () => {
   describe('apply', () => {
-    function itShouldSort(raw, source, expected) {
-      it(`should apply ${raw}`, () => {
+    function itShouldSort(raw: string, source: unknown[], expected: unknown[]) {
+      it(`should sort ${raw} ${JSON.stringify(source)}`, () => {
         const ast = parser.parse(raw);
         const actual = source.sort(ast.apply);
 

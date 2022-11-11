@@ -1,30 +1,51 @@
 import { describe, expect, it } from 'vitest';
 
-import { filter as parser } from '../src/parsers';
-import { makeGeoPoint } from '../src/lib/geo';
+import {
+  AstAllFilter,
+  AstAndExpression, AstAnyFilter,
+  AstBooleanLiteral,
+  AstComparison,
+  AstDateTimeOffsetLiteral,
+  AstFieldPath,
+  AstFloatLiteral, AstFnGeoDistance, AstFnGeoIntersects, AstFnSearchIn, AstFnSearchIsMatch, AstFnSearchIsMatchScoring,
+  AstGeoPointLiteral,
+  AstGeoPolygonLiteral, AstGroupExpression,
+  AstIdentifier,
+  AstIntegerLiteral, AstLambda, AstNegativeInfinityLiteral,
+  AstNotANumberLiteral, AstNotExpression,
+  AstNullLiteral,
+  AstOrExpression,
+  AstPositiveInfinityLiteral,
+  AstStringLiteral,
+  filter as parser,
+  FilterAst,
+  FilterParserResult
+} from '../src/parsers';
 
 describe('query-select', () => {
   describe('apply', () => {
-    function isPojo(candidate) {
+    function isPojo(candidate: any): candidate is object {
       return candidate != null && typeof candidate === 'object' && candidate.__proto__.constructor.name === 'Object';
     }
-    function stripCompiledDeep({ canApply, apply, ...rest }) {
-      for (const k in rest) {
-        if (!rest.hasOwnProperty(k)) {
+    function stripCompiledDeep({ canApply, apply, ...rest }: FilterParserResult): FilterAst {
+      const candidate = rest as Record<string, any>;
+
+      for (const k in candidate) {
+        if (!candidate.hasOwnProperty(k)) {
           break;
         }
 
-        if (Array.isArray(rest[k])) {
-          rest[k] = rest[k].map(r => isPojo(r) ? stripCompiledDeep(r) : r);
-        } else if (isPojo(rest[k])) {
-          rest[k] = stripCompiledDeep(rest[k]);
+        if (Array.isArray(candidate[k])) {
+          candidate[k] = candidate[k].map((r: any) => isPojo(r) ? stripCompiledDeep(r as FilterParserResult) : r);
+        } else if (isPojo(candidate[k])) {
+          candidate[k] = stripCompiledDeep(candidate[k]);
         }
       }
 
-      return rest;
+      return candidate as FilterAst;
     }
 
-    function test(raw, expected) {
+    function test(raw: string, expected: FilterParserResult | FilterAst) {
       it(`should select ${raw}`, () => {
         const ast = parser.parse(raw);
 
@@ -32,41 +53,41 @@ describe('query-select', () => {
       });
     }
 
-    const fieldPathAst = (...value) => ({ type: "FIELD_PATH", value });
-    const identifierAst = value => ({ type: "IDENTIFIER", value });
-    const comparisonAst = (left, op, right) => ({ type: "COMPARISON", left, op, right });
-    const stringAst = value => ({ type: "STRING", value });
-    const datetimeOffsetAst = value => ({ type: "DATETIMEOFFSET", value });
-    const integerAst = value => ({ type: "INTEGER", value });
-    const floatAst = value => ({ type: "FLOAT", value });
-    const nanAst = () => ({ type: "NOT_A_NUMBER", value: Number.NaN });
-    const posInfAst = () => ({ type: "POSITIVE_INFINITY", value: Number.POSITIVE_INFINITY });
-    const negInfAst = () => ({ type: "NEGATIVE_INFINITY", value: Number.NEGATIVE_INFINITY });
-    const booleanAst = value => ({ type: "BOOLEAN", value });
-    const nullAst = () => ({ type: "NULL", value: null });
-    const geoPointAst = (lon, lat) => ({ type: 'GEO_POINT', lon, lat });
-    const geoPolygonAst = (...points) => ({ type: 'GEO_POLYGON', points: [...points, points[0]] });
-    const andExpressionAst = (left, right) => ({ type: "AND_EXPRESSION", left, right });
-    const orExpressionAst = (left, right) => ({ type: "OR_EXPRESSION", left, right });
-    const notExpressionAst = value => ({ type: "NOT_EXPRESSION", value });
-    const groupAst = value => ({ type: "GROUP_EXPRESSION", value });
-    const lambdaAst = (params, expression) => ({ type: "LAMBDA", params, expression });
-    const allFilterAst = (target, expression) => ({ type: "ALL_FILTER", target, expression });
-    const anyFilterAst = (target, expression) => {
+    const fieldPathAst = (...value: string[]): AstFieldPath => ({ type: "FIELD_PATH", value });
+    const identifierAst = (value: string): AstIdentifier => ({ type: "IDENTIFIER", value });
+    const comparisonAst = (left: FilterAst, op: 'gt' | 'lt' | 'ge' | 'le' | 'eq' | 'ne', right: FilterAst): AstComparison => ({ type: "COMPARISON", left, op, right });
+    const stringAst = (value: string): AstStringLiteral => ({ type: "STRING", value });
+    const datetimeOffsetAst = (value: Date): AstDateTimeOffsetLiteral => ({ type: "DATETIMEOFFSET", value });
+    const integerAst = (value: number): AstIntegerLiteral => ({ type: "INTEGER", value });
+    const floatAst = (value: number): AstFloatLiteral => ({ type: "FLOAT", value });
+    const nanAst = (): AstNotANumberLiteral => ({ type: "NOT_A_NUMBER", value: Number.NaN });
+    const posInfAst = (): AstPositiveInfinityLiteral => ({ type: "POSITIVE_INFINITY", value: Number.POSITIVE_INFINITY });
+    const negInfAst = (): AstNegativeInfinityLiteral => ({ type: "NEGATIVE_INFINITY", value: Number.NEGATIVE_INFINITY });
+    const booleanAst = (value: boolean): AstBooleanLiteral => ({ type: "BOOLEAN", value });
+    const nullAst = (): AstNullLiteral => ({ type: "NULL", value: null });
+    const geoPointAst = (lon: number, lat: number): AstGeoPointLiteral => ({ type: 'GEO_POINT', lon, lat });
+    const geoPolygonAst = (...points: { lon: number, lat: number }[]): AstGeoPolygonLiteral => ({ type: 'GEO_POLYGON', points: [...points, points[0]] });
+    const andExpressionAst = (left: FilterAst, right: FilterAst): AstAndExpression => ({ type: "AND_EXPRESSION", left, right });
+    const orExpressionAst = (left: FilterAst, right: FilterAst): AstOrExpression => ({ type: "OR_EXPRESSION", left, right });
+    const notExpressionAst = (value: FilterAst): AstNotExpression => ({ type: "NOT_EXPRESSION", value });
+    const groupAst = (value: FilterAst): AstGroupExpression => ({ type: "GROUP_EXPRESSION", value });
+    const lambdaAst = (params: [AstIdentifier], expression: FilterAst): AstLambda => ({ type: "LAMBDA", params, expression });
+    const allFilterAst = (target: AstIdentifier | AstFieldPath, expression: FilterAst): AstAllFilter => ({ type: "ALL_FILTER", target, expression });
+    const anyFilterAst = (target: AstIdentifier | AstFieldPath, expression?: FilterAst): AstAnyFilter => {
       if (expression) {
         return { type: "ANY_FILTER", target, expression };
       }
       return { type: "ANY_FILTER", target };
     };
-    const geoDistanceAst = (from, to) => ({ type: "FN_GEO_DISTANCE", from, to });
-    const geoIntersectsAst = (point, polygon) => ({ type: "FN_GEO_INTERSECTS", point, polygon });
-    const searchInAst = (variable, valueList, delimiter) => {
+    const geoDistanceAst = (from: AstIdentifier | AstGeoPointLiteral, to: AstIdentifier | AstGeoPointLiteral): AstFnGeoDistance => ({ type: "FN_GEO_DISTANCE", from, to });
+    const geoIntersectsAst = (point: AstIdentifier, polygon: AstGeoPolygonLiteral): AstFnGeoIntersects => ({ type: "FN_GEO_INTERSECTS", point, polygon });
+    const searchInAst = (variable: FilterAst, valueList: AstStringLiteral, delimiter?: AstStringLiteral): AstFnSearchIn => {
       if (delimiter) {
         return { type: "FN_SEARCH_IN", variable, valueList, delimiter };
       }
       return { type: "FN_SEARCH_IN", variable, valueList };
     };
-    const searchIsMatchAst = (search, searchFields, queryType, searchMode) => {
+    const searchIsMatchAst = (search: AstStringLiteral, searchFields?: AstStringLiteral, queryType?: 'full' | 'simple', searchMode?: 'any' | 'all'): AstFnSearchIsMatch => {
       if (searchFields && queryType && searchMode) {
         return { type: "FN_SEARCH_ISMATCH", search, searchFields, queryType, searchMode };
       }
@@ -75,7 +96,7 @@ describe('query-select', () => {
       }
       return { type: "FN_SEARCH_ISMATCH", search };
     };
-    const searchIsMatchScoringAst = (search, searchFields, queryType, searchMode) => {
+    const searchIsMatchScoringAst = (search: AstStringLiteral, searchFields?: AstStringLiteral, queryType?: 'full' | 'simple', searchMode?: 'any' | 'all'): AstFnSearchIsMatchScoring => {
       if (searchFields && queryType && searchMode) {
         return { type: "FN_SEARCH_ISMATCHSCORING", search, searchFields, queryType, searchMode };
       }
@@ -85,7 +106,7 @@ describe('query-select', () => {
       return { type: "FN_SEARCH_ISMATCHSCORING", search };
     };
 
-    const constants = [
+    const constants: [string, FilterAst][] = [
       ["'foobar'", stringAst("foobar")],
       ["''", stringAst("")],
       ["'4'", stringAst("4")],
@@ -133,8 +154,8 @@ describe('query-select', () => {
       "le",
       "eq",
       "ne",
-    ];
-    const variables = [
+    ] as const;
+    const variables: [string, AstIdentifier | AstFieldPath][] = [
       ["f", identifierAst("f")],
       ["F", identifierAst("F")],
       ["_", identifierAst("_")],
@@ -144,9 +165,9 @@ describe('query-select', () => {
 
       ["a/b", fieldPathAst("a", "b")],
       ["a/b/c", fieldPathAst("a", "b", "c")],
-    ]
+    ];
 
-    const unaryExpressions = [
+    const unaryExpressions: [string, FilterAst][] = [
       ["not true", notExpressionAst(booleanAst(true))],
       ["not not true", notExpressionAst(notExpressionAst(booleanAst(true)))],
       ["not foo gt 0", notExpressionAst(comparisonAst(
@@ -160,7 +181,7 @@ describe('query-select', () => {
         integerAst(0),
       ))],
     ];
-    const binaryExpressions = [
+    const binaryExpressions: [string, FilterAst][] = [
       ["true and true", andExpressionAst(booleanAst(true), booleanAst(true))],
       ["true and false", andExpressionAst(booleanAst(true), booleanAst(false))],
       ["4.0 gt f and true", andExpressionAst(
@@ -183,7 +204,7 @@ describe('query-select', () => {
         comparisonAst(fieldPathAst("f", "b"), "eq", integerAst(0)),
       )],
     ];
-    const groupExpressions = [
+    const groupExpressions: [string, FilterAst][] = [
       ["(true)", groupAst(booleanAst(true))],
       ["true and (false and true)", andExpressionAst(
         booleanAst(true),
@@ -232,7 +253,7 @@ describe('query-select', () => {
         )
       ))],
     ];
-    const filters = [
+    const filters: [string, FilterAst][] = [
       ["f/all(v:true)", allFilterAst(
         identifierAst("f"),
         lambdaAst([identifierAst("v")], booleanAst(true))
@@ -251,7 +272,7 @@ describe('query-select', () => {
         ))
       )],
     ];
-    const functions = [
+    const functions: [string, FilterAst][] = [
       ["geo.distance(v, geography'POINT(1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(1, 2)), "eq", integerAst(0))],
       ["geo.distance(v, geography'POINT(-1.0 2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(-1, 2)), "eq", integerAst(0))],
       ["geo.distance(v, geography'POINT(1.0 -2.0)') eq 0", comparisonAst(geoDistanceAst(identifierAst("v"), geoPointAst(1, -2)), "eq", integerAst(0))],

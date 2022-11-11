@@ -52,8 +52,8 @@ select_expression
         {
         const { mergeDeep, mergeSequence } = yy.deps;
         const keys = [$1, ...$2.map(([sep, clause]) => clause)];
-        const canApply = (schema, require) => keys
-            .reduce((acc, cur) => [...acc, ...cur.canApply(schema, require)], []);
+        const canApply = (schema) => keys
+            .reduce((acc, cur) => [...acc, ...cur.canApply(schema)], []);
         const apply = (input) => keys
             .reduce((acc, cur) => mergeDeep(
                     acc,
@@ -79,7 +79,7 @@ variable
         {
         const { getStruct, matchSchema } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const canApply = (schema) => matchSchema(schema, value);
         const apply = (input) => getStruct(input, value);
         $$ = { type: "FIELD_PATH", value, canApply, apply };
         }
@@ -90,7 +90,7 @@ variable
         {
         const { matchSchema } = yy.deps;
         const value = $1;
-        const canApply = (schema, require) => matchSchema(schema, require, [value]);
+        const canApply = (schema) => matchSchema(schema, [value]);
         const apply = (input) => ({ [value]: input[value] });
         $$ = { type: "IDENTIFIER", value, canApply, apply };
         }

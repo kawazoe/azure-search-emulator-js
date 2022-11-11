@@ -45,8 +45,8 @@ order_by_expression
         {
         const { mergeDeep, mergeSequence } = yy.deps;
         const keys = [$1, ...$2.map(([sep, clause]) => clause)];
-        const canApply = (schema, require) => keys
-            .reduce((acc, cur) => [...acc, ...cur.canApply(schema, require)], []);
+        const canApply = (schema) => keys
+            .reduce((acc, cur) => [...acc, ...cur.canApply(schema)], []);
         const apply = (left, right) => {
             for (const key of keys) {
                 const result = key.apply(left, right);
@@ -111,7 +111,7 @@ variable
         {
         const { compare, getValue, matchSchema } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const canApply = (schema) => matchSchema(schema, value);
         const apply = (left, right) => compare(getValue(left, value), getValue(right, value));
         $$ = { type: "FIELD_PATH", value, canApply, apply };
         }
@@ -122,7 +122,7 @@ variable
         {
         const { compare, matchSchema } = yy.deps;
         const value = $1;
-        const canApply = (schema, require) => matchSchema(schema, require, [value]);
+        const canApply = (schema) => matchSchema(schema, [value]);
         const apply = (left, right) => compare(left[value], right[value]);
         $$ = { type: "IDENTIFIER", value, canApply, apply };
         }

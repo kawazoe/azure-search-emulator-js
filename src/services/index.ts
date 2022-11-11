@@ -1,4 +1,5 @@
 export * from './schema';
+export * from './analyzerService';
 export * from './dataStore';
 export * from './scorer';
 export * from './searchBackend';

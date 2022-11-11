@@ -1,20 +1,20 @@
 import type { Suggester } from './suggestEngine';
-import type { AutocompleteModes, AutocompleteResult } from './searchBackend';
-import {
-  SearchBackend,
-  useCoverage,
-  useFilterScoring,
-  useLimiterMiddleware,
-  useOrderBy,
-  useSearchScoring,
-  useAutocompleteResult,
-  createAutocompleteSuggestionStrategy,
-  useStripScore, useScoringProfiles
-} from './searchBackend';
+import type { AutocompleteResult } from './searchBackend';
+import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
 
+import { useFiltering } from './middlewares/reducer/filtering';
+import { createAutocompleteSuggestionStrategy, useLuceneSearch } from './middlewares/reducer/luceneSearch';
+import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
+import { useAutocompleteResult } from './middlewares/reducer/autocompleteResult';
+import { useOrderBy } from './middlewares/transformer/orderBy';
+import { useCoverage } from './middlewares/transformer/coverage';
+import { useLimiterMiddleware } from './middlewares/transformer/limiter';
+import { useStripScore } from './middlewares/transformer/stripScore';
+import { PlainAnalysisMode, createPlainQueryStrategy } from './analyzerService';
+
 export interface AutoCompleteRequest {
-  autocompleteMode?: AutocompleteModes;
+  autocompleteMode?: PlainAnalysisMode;
   filter?: string;          //< OData Filter expression
   fuzzy?: boolean;
   highlightPreTag?: string;
@@ -43,10 +43,13 @@ export class AutocompleteEngine<T extends object> {
 
   public autocomplete(request: AutoCompleteRequest): AutoCompleteDocumentResult {
     const documentMiddlewares = [
-      ...(request.filter ? [useFilterScoring<T, '*'>(request.filter)] : []),
-      ...(request.search ? [useSearchScoring<T, '*'>({
-        search: request.search,
+      ...(request.filter ? [useFiltering<T, '*'>(request.filter)] : []),
+      ...(request.search ? [useLuceneSearch<T, '*'>({
         searchFields: request.searchFields ?? '*',
+        queryingStrategy: createPlainQueryStrategy({
+          search: request.search,
+          analysisMode: request.autocompleteMode ?? 'oneTerm'
+        }),
         suggestionStrategy: createAutocompleteSuggestionStrategy<T>({
           highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
           preTag: request.highlightPreTag ?? '',

@@ -5,7 +5,7 @@ import { makeGeoPoint } from '../src/lib/geo';
 
 describe('query-select', () => {
   describe('apply', () => {
-    function itShouldFilter(raw, source, expected) {
+    function itShouldFilter(raw: string, source: unknown[], expected: [number, unknown][]) {
       it(`should filter ${raw}`, () => {
         const ast = parser.parse(raw);
         const actual = source.map(d => [ast.apply(d), d]);

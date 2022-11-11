@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { People } from './lib/mockSchema';
-import { peopleSchema } from './lib/mockSchema';
-
 import type { FieldDefinition } from '../src';
 import { validateSchema } from '../src';
 
@@ -21,18 +18,90 @@ describe('Schema', () => {
       expect(() => validateSchema(schema)).toThrowError(/Duplicate/);
     });
 
-    it('should return keyField, flatSchema, and assertSchema', () => {
+    it('should return keyField', () => {
       const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
       const bar: FieldDefinition = { type: 'Edm.String', name: 'bar' };
       const schema: FieldDefinition[] = [key, bar];
-      const { keyField, flatSchema, assertSchema } = validateSchema(schema);
+      const { keyField } = validateSchema(schema);
 
       expect(keyField).toBe(key);
-      expect(flatSchema).toEqual([
-        ['foo', ['foo'], key],
-        ['bar', ['bar'], bar],
+    });
+
+    it('should build specialized schemas (retrievable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar', retrievable: false };
+      const schema: FieldDefinition[] = [key, bar];
+      const { retrievableSchema } = validateSchema(schema);
+
+      expect(retrievableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
       ]);
-      expect(assertSchema).toBeTypeOf('function');
+    });
+
+    it('should build specialized schemas (filterable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar', filterable: false };
+      const schema: FieldDefinition[] = [key, bar];
+      const { filterableSchema } = validateSchema(schema);
+
+      expect(filterableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+      ]);
+    });
+
+    it('should build specialized schemas (sortable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar', sortable: false };
+      const schema: FieldDefinition[] = [key, bar];
+      const { sortableSchema } = validateSchema(schema);
+
+      expect(sortableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+      ]);
+    });
+
+    it('should build specialized schemas (searchable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar', searchable: false };
+      const schema: FieldDefinition[] = [key, bar];
+      const { searchableSchema } = validateSchema(schema);
+
+      expect(searchableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+      ]);
+    });
+
+    it('should build specialized schemas (facetable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar', facetable: false };
+      const schema: FieldDefinition[] = [key, bar];
+      const { facetableSchema } = validateSchema(schema);
+
+      expect(facetableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+      ]);
+    });
+
+    it.todo('should build specialized meta schemas (suggestable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar' };
+      const schema: FieldDefinition[] = [key, bar];
+      const { facetableSchema } = validateSchema(schema);
+
+      expect(facetableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+      ]);
+    });
+
+    it.todo('should build specialized meta schemas (analyzable)', () => {
+      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
+      const bar: FieldDefinition = { type: 'Edm.String', name: 'bar' };
+      const schema: FieldDefinition[] = [key, bar];
+      const { facetableSchema } = validateSchema(schema);
+
+      expect(facetableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+      ]);
     });
 
     it('should flatten complex field', () => {
@@ -41,13 +110,13 @@ describe('Schema', () => {
       const buz: FieldDefinition = { type: 'Edm.String', name: 'buz' };
       const bar: FieldDefinition = { type: 'Edm.ComplexType', name: 'bar', fields: [baz, buz] };
       const schema: FieldDefinition[] = [key, bar];
-      const { flatSchema } = validateSchema(schema);
+      const { retrievableSchema } = validateSchema(schema);
 
-      expect(flatSchema).toEqual([
-        ['foo', ['foo'], key],
-        ['bar', ['bar'], bar],
-        ['bar/baz', ['bar', 'baz'], baz],
-        ['bar/buz', ['bar', 'buz'], buz],
+      expect(retrievableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+        { name: 'bar', path: ['bar'], field: bar },
+        { name: 'bar/baz', path: ['bar', 'baz'], field: baz },
+        { name: 'bar/buz', path: ['bar', 'buz'], field: buz },
       ]);
     });
 
@@ -57,76 +126,14 @@ describe('Schema', () => {
       const buz: FieldDefinition = { type: 'Edm.String', name: 'buz' };
       const bar: FieldDefinition = { type: 'Collection(Edm.ComplexType)', name: 'bar', fields: [baz, buz] };
       const schema: FieldDefinition[] = [key, bar];
-      const { flatSchema } = validateSchema(schema);
+      const { retrievableSchema } = validateSchema(schema);
 
-      expect(flatSchema).toEqual([
-        ['foo', ['foo'], key],
-        ['bar', ['bar'], bar],
-        ['bar/baz', ['bar', 'baz'], baz],
-        ['bar/buz', ['bar', 'buz'], buz],
+      expect(retrievableSchema).toEqual([
+        { name: 'foo', path: ['foo'], field: key },
+        { name: 'bar', path: ['bar'], field: bar },
+        { name: 'bar/baz', path: ['bar', 'baz'], field: baz },
+        { name: 'bar/buz', path: ['bar', 'buz'], field: buz },
       ]);
     });
-  });
-
-  describe('assertSchema', () => {
-    it('should fail when the key is not present', () => {
-      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
-      const schema: FieldDefinition[] = [key];
-      const { assertSchema } = validateSchema(schema);
-
-      expect(() => assertSchema({})).toThrowError(/Key not found/);
-    });
-
-    it('succeed with a minimal valid schema and matching document', () => {
-      const key: FieldDefinition = { type: 'Edm.String', key: true, name: 'foo' };
-      const schema: FieldDefinition[] = [key];
-      const { assertSchema } = validateSchema(schema);
-
-      const result = assertSchema({ foo: 'abc' });
-
-      expect(result).toEqual({ foo: 'abc' });
-    });
-
-    it('succeed with a complex valid schema and matching document', () => {
-      const { assertSchema } = validateSchema<People>(peopleSchema);
-
-      const result = assertSchema({
-        id: 'abc',
-        fullName: 'Foo Bar',
-        addresses: [
-          { kind: 'home', parts: '12 home street' },
-          { kind: 'work', parts: '34 work road' },
-        ],
-        phones: ['555-123-4567'],
-        ratio: 0.34,
-        income: 120_000,
-        metadata: {
-          createdBy: 'mock',
-          createdOn: new Date('1970-01-01'),
-          editCounter: 3,
-          deleted: false,
-        },
-      } as People);
-
-      expect(result).toEqual({
-        id: 'abc',
-        fullName: 'Foo Bar',
-        addresses: [
-          { kind: 'home', parts: '12 home street' },
-          { kind: 'work', parts: '34 work road' },
-        ],
-        phones: ['555-123-4567'],
-        ratio: 0.34,
-        income: 120_000,
-        metadata: {
-          createdBy: 'mock',
-          createdOn: new Date('1970-01-01'),
-          editCounter: 3,
-          deleted: false
-        },
-      });
-    });
-
-    // TODO: Add a test for all failure modes
   });
 });

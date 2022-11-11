@@ -4,7 +4,7 @@ import { select as parser } from '../src/parsers';
 
 describe('query-select', () => {
   describe('apply', () => {
-    function itShouldSelect(raw, source, expected) {
+    function itShouldSelect(raw: string, source: unknown, expected: unknown) {
       it(`should select ${raw}`, () => {
         const ast = parser.parse(raw);
         const actual = ast.apply(source);

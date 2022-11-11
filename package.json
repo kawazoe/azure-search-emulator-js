@@ -35,20 +35,24 @@
   "scripts": {
     "dev": "vite",
     "jison": "node scripts/generate.js",
-    "build": "npm run jison && tsc && vite build",
+    "stopwords": "node scripts/parse-stopwords-doc.js",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest"
   },
   "devDependencies": {
-    "@vitest/ui": "^0.24.3",
+    "@types/fold-to-ascii": "^5.0.0",
     "jison": "npm:jison-gho@^0.6.1-216",
-    "typescript": "^4.8.3",
-    "vite": "^3.1.8",
-    "vite-plugin-dts": "^1.6.6",
-    "vite-plugin-static-copy": "^0.11.0",
-    "vitest": "^0.24.3"
+    "node-fetch": "^3.3.0",
+    "node-html-parser": "^6.1.4",
+    "typescript": "^4.9.3",
+    "vite": "^3.2.4",
+    "vite-plugin-dts": "^1.7.1",
+    "vite-plugin-static-copy": "^0.12.0",
+    "vitest": "^0.25.3"
   },
   "dependencies": {
-    "deepmerge": "^4.2.2"
+    "deepmerge": "^4.2.2",
+    "fold-to-ascii": "^5.0.1"
   }
 }

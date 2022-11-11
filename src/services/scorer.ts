@@ -4,7 +4,8 @@ import { _throw } from '../lib/_throw';
 import { addTime, subtractTime } from '../lib/dates';
 import { calculateDistance, makeGeoPoint } from '../lib/geo';
 import { DeepKeyOf } from '../lib/odata';
-import type { ParsedDocument, ParsedValue, ParsedValueGeo, ParsedValueText } from './schema';
+import { AnalyzedDocument, AnalyzedValue, AnalyzedValueGeo, AnalyzedValueFullText } from './analyzerService';
+import { Filterable, SchemaService, Searchable } from './schema';
 
 export interface ScoringFnIdentity<T extends object> {
   fieldName: DeepKeyOf<T>;
@@ -54,13 +55,13 @@ export interface ScoringProfile<T extends object> {
 }
 
 export type ScoringParams = Record<string, string[]>;
-export type ScoringBases<T extends object> = { key: DeepKeyOf<T>, score: number }[];
+export type ScoringBases = { key: string, score: number }[];
 
-export type ScoringStrategy = (value: ParsedValue) => number;
-export type ScoringStrategies<T extends object> = (document: ParsedDocument<T>, bases: ScoringBases<T>) => number;
+export type ScoringStrategy = (value: AnalyzedValue) => number;
+export type ScoringStrategies = (document: AnalyzedDocument, bases: ScoringBases) => number;
 
 export type RawScoringStrategy = (params: ScoringParams) => ScoringStrategy;
-export type RawScoringStrategies<T extends object> = (params: ScoringParams) => ScoringStrategies<T>;
+export type RawScoringStrategies = (params: ScoringParams) => ScoringStrategies;
 
 type InterpolationFn = (value: any, lower: any, upper: any) => number;
 
@@ -118,14 +119,14 @@ function toInterpolationFn(fn: ScoringFnApplication, latch: boolean): Interpolat
 }
 
 function createBooster<T>(interpolate: InterpolationFn, factor: number): (value: T, lower: T, upper: T) => number {
-  return (v, l, u) => 1 + interpolate(v, l, u) * (factor - 1)
+  return (v, l, u) => interpolate(v, l, u) * (factor - 1)
 }
 
 function magnitudeFunctionStrategy(fn: ScoringMagnitudeFn): RawScoringStrategy {
   const { boostingRangeStart, boostingRangeEnd, constantBoostBeyondRange } = fn.magnitude;
   const boost = createBooster(toInterpolationFn(fn, constantBoostBeyondRange ?? false), fn.boost);
 
-  return () => (value: ParsedValue) => sum(value.values.map(v => boost(
+  return () => (analyzed: AnalyzedValue) => sum(analyzed.values.map(v => boost(
     v as number,
     boostingRangeStart,
     boostingRangeEnd,
@@ -156,7 +157,7 @@ function freshnessFunctionStrategy(fn: ScoringFreshnessFn): RawScoringStrategy {
     const now = new Date();
     const window = boostingDurationWindow(now);
 
-    return (value: ParsedValue) => sum(value.values.map(v => boost(
+    return (analyzed: AnalyzedValue) => sum(analyzed.values.map(v => boost(
       v as Date,
       window,
       now,
@@ -171,7 +172,7 @@ function distanceFunctionStrategy(fn: ScoringDistanceFn): RawScoringStrategy {
     const referencePoint = params[fn.distance.referencePointParameter] ?? _throw(new Error(`Missing referencePointParameter with name of ${fn.distance.referencePointParameter} in query`));
     const to = makeGeoPoint(parseFloat(referencePoint[0]), parseFloat(referencePoint[1]));
 
-    return (value: ParsedValue) => sum((value as ParsedValueGeo).points.map(from => boost(
+    return (analyzed: AnalyzedValue) => sum((analyzed as AnalyzedValueGeo).points.map(from => boost(
       calculateDistance(from, to) / 1000,
       fn.distance.boostingDistance,
       0,
@@ -185,11 +186,11 @@ function tagFunctionStrategy(fn: ScoringTagFn): RawScoringStrategy {
   return (params) => {
     const tags = params[fn.tag.tagsParameter] ?? _throw(new Error(`Missing tagsParameter with name of ${fn.tag.tagsParameter} in query`));
 
-    return (value: ParsedValue) => sum((value as ParsedValueText).words.map(words =>
+    return (analyzed: AnalyzedValue) => sum((analyzed as AnalyzedValueFullText).entries.map(entry =>
       boost(
-        words.filter(w => tags.includes(w)).length,
+        entry.filter(w => tags.includes(w.value)).length,
         0,
-        words.length,
+        entry.length,
       )));
   };
 }
@@ -224,18 +225,36 @@ function aggregateStrategies<T extends object>(
     case 'maximum':
       return max;
     case 'firstMatching':
-      return (boosts) => boosts.find(b => b !== 1) ?? 1;
+      return (boosts) => boosts.find(b => b !== 0) ?? 0;
     default:
       _never(algorithm);
   }
 }
 
-function toStrategies<T extends object>(profile: ScoringProfile<T>): RawScoringStrategies<T> {
-  const weightByFields: Partial<Record<DeepKeyOf<T>, number>>  = profile.text?.weights
+function toStrategies<T extends object>(
+  profile: ScoringProfile<T>,
+  searchableSchema: Searchable[],
+  filterableSchema: Filterable[]
+): RawScoringStrategies {
+  const weightByFields: Partial<Record<string, number>>  = profile.text?.weights
     ?? {};
+
+  for (const key of Object.keys(weightByFields)) {
+    if (!searchableSchema.some(s => s.name === key)) {
+      throw new Error(`Invalid scoring profile named ${profile.name}. Field ${key} is not searchable but has a weight set.`);
+    }
+  }
+
   const rawFunctionStrategies = profile.functions
     ?.map(fn => ({ key: fn.fieldName, strategy: toFunctionStrategy(fn) }))
     ?? [];
+
+  for (const strategy of rawFunctionStrategies) {
+    if (!filterableSchema.some(s => s.name === strategy.key)) {
+      throw new Error(`Invalid scoring profile named ${profile.name}. Field ${strategy.key} is not filterable but has a function set.`);
+    }
+  }
+
   const aggregateStrategy = aggregateStrategies(profile.functionAggregation);
 
   return (params) => {
@@ -244,14 +263,14 @@ function toStrategies<T extends object>(profile: ScoringProfile<T>): RawScoringS
     return (document, bases) => {
       let score = 0;
       for (const base of bases) {
-        const key = base.key as DeepKeyOf<T>;
+        const key = base.key;
         score += base.score * (weightByFields[key] ?? 1);
       }
 
       const boosts = functionStrategies
         .map(fn => ({ value: document[fn.key], strategy: fn.strategy }))
         .filter((fn): fn is { value: NonNullable<typeof fn.value>, strategy: typeof fn.strategy } => fn.value != null)
-        .map(fn => fn.strategy(fn.value))
+        .map(fn => 1 + fn.strategy(fn.value))
         ?? [];
 
       if (boosts.length === 0) {
@@ -314,22 +333,25 @@ parseParams.fnSeparator = '-';
 parseParams.argSeparator = ',';
 parseParams.argQuote = "'";
 
-const nullStrategy: ScoringStrategies<any> = (_, bases) => sum(bases.map(b => b.score));
+const nullStrategy: ScoringStrategies = (_, bases) => sum(bases.map(b => b.score));
 export class Scorer<T extends object> {
-  public strategies: Record<string, RawScoringStrategies<T>>;
-  public defaultStrategy: RawScoringStrategies<T> | null;
+  public strategies: Record<string, RawScoringStrategies>;
+  public defaultStrategy: RawScoringStrategies | null;
 
   public static readonly nullStrategy = nullStrategy;
 
   constructor(
+    readonly schemaService: SchemaService<T>,
     readonly profiles: ScoringProfile<T>[],
     readonly defaultProfile: string | null,
   ) {
-    this.strategies = Object.fromEntries(profiles.map(p => [p.name, toStrategies(p)]));
+    this.strategies = Object.fromEntries(profiles.map(p =>
+      [p.name, toStrategies(p, schemaService.searchableSchema, schemaService.filtrableSchema)]
+    ));
     this.defaultStrategy = defaultProfile && this.strategies[defaultProfile] || null;
   }
 
-  public getScoringStrategies(profile: string | null, parameters: string[] | null ): ScoringStrategies<T> {
+  public getScoringStrategies(profile: string | null, parameters: string[] | null ): ScoringStrategies {
     const strategies = profile
       ? this.strategies[profile]
       : this.defaultStrategy;

@@ -2,19 +2,19 @@ import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import type { KeyFieldDefinition } from './schema';
 import type { SuggestResult } from './searchBackend';
-import {
-  SearchBackend,
-  useCoverage,
-  useSelect,
-  useFilterScoring,
-  useLimiterMiddleware,
-  useOrderBy,
-  useSearchScoring,
-  createHighlightSuggestionStrategy,
-  useSuggestResult,
-  useStripScore, useScoringProfiles
-} from './searchBackend';
+import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
+
+import { useFiltering } from './middlewares/reducer/filtering';
+import { createHighlightSuggestionStrategy, useLuceneSearch } from './middlewares/reducer/luceneSearch';
+import { useSelect } from './middlewares/reducer/select';
+import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
+import { useSuggestResult } from './middlewares/reducer/suggestResult';
+import { useOrderBy } from './middlewares/transformer/orderBy';
+import { useCoverage } from './middlewares/transformer/coverage';
+import { useLimiterMiddleware } from './middlewares/transformer/limiter';
+import { useStripScore } from './middlewares/transformer/stripScore';
+import { createPlainQueryStrategy } from './analyzerService';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {
   filter?: string;          //< OData Filter expression
@@ -54,10 +54,13 @@ export class SuggestEngine<T extends object> {
 
   public suggest<Keys extends ODataSelect<T>>(request: SuggestRequest<T, Keys>): SuggestDocumentsResult<ODataSelectResult<T, Keys>> {
     const documentMiddlewares = [
-      ...(request.filter ? [useFilterScoring<T, Keys>(request.filter)] : []),
-      ...(request.search ? [useSearchScoring<T, Keys>({
-        search: request.search,
+      ...(request.filter ? [useFiltering<T, Keys>(request.filter)] : []),
+      ...(request.search ? [useLuceneSearch<T, Keys>({
         searchFields: request.searchFields ?? '*',
+        queryingStrategy: createPlainQueryStrategy({
+          search: request.search,
+          analysisMode: 'oneTerm',
+        }),
         suggestionStrategy: createHighlightSuggestionStrategy<T>({
           highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
           preTag: request.highlightPreTag ?? '',

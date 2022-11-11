@@ -22,7 +22,7 @@ import {
   AutocompleteEngine,
   SchemaService,
   SearchBackend,
-  Scorer
+  Scorer, AnalyzerService
 } from './services';
 
 export class Index<T extends object> {
@@ -34,21 +34,16 @@ export class Index<T extends object> {
     defaultScoringProfile?: string,
   }) {
     const schemaService = SchemaService.createSchemaService<T>(options.schema);
+    const analyzer = new AnalyzerService(schemaService);
+    const scorer = new Scorer<T>(schemaService, options.scoringProfiles ?? [], options.defaultScoringProfile ?? null);
+    const dataStore = new DataStore<T>(schemaService, analyzer);
 
-    const dataStore = new DataStore<T>(schemaService);
-    const scorer = new Scorer<T>(options.scoringProfiles ?? [], options.defaultScoringProfile ?? null);
     const searchBackend = new SearchBackend<T>(schemaService, () => dataStore.documents);
+
     const searchEngine = new SearchEngine<T>(searchBackend, scorer);
     const suggesterProvider = (name: string) => options.suggesters?.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
-    const suggestEngine = new SuggestEngine<T>(
-      searchBackend,
-      () => schemaService.keyField,
-      suggesterProvider,
-    );
-    const autocompleteEngine = new AutocompleteEngine<T>(
-      searchBackend,
-      suggesterProvider,
-    )
+    const suggestEngine = new SuggestEngine<T>(searchBackend, () => schemaService.keyField, suggesterProvider);
+    const autocompleteEngine = new AutocompleteEngine<T>(searchBackend, suggesterProvider);
 
     return new Index<T>(options.name, dataStore, searchEngine, suggestEngine, autocompleteEngine);
   }

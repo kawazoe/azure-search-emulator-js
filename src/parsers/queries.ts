@@ -1,37 +1,35 @@
 import _filter, { FilterActions } from './query-filter';
 import _orderBy, { OrderByActions } from './query-orderby';
 import _select, { SelectActions } from './query-select';
-
+import _simple, { SimpleActions } from './query-simple';
 import deepmerge from 'deepmerge';
 
 import { getStruct, getValue } from '../lib/objects';
 
-import type { MergeSequenceFunction} from './jison-parser';
 import type {
-  FilterAst,
-  OrderByAst,
-  SelectAst,
+  FacetActions,
   FacetAst,
   FacetParamsAst,
   FacetResults,
-  FacetActions
+  FilterAst,
+  OrderByAst,
+  SelectAst,
+  SimpleAst
 } from './asts';
-import type { FlatSchema, SchemaMatcherRequirements } from '../services';
-import { matchSchemaRequirement } from '../services';
-import { flatValue } from '../services/utils';
 import { toPaths } from './asts';
-import type {
-  GeoPoint,
-} from '../lib/geo';
-import {
-  calculateDistance,
-  intersects,
-  isGeoPoint,
-  makeGeoPointFromPojo,
-  makeGeoPolygon
-} from '../lib/geo';
+import type { Facetable, Filterable, Retrievable, Searchable, Sortable } from '../services';
+import { flatValue } from '../services/utils';
+import type { GeoPoint, } from '../lib/geo';
+import { calculateDistance, intersects, isGeoPoint, makeGeoPointFromPojo, makeGeoPolygon } from '../lib/geo';
+import { score } from '../services';
 
 const mergeDeep = deepmerge;
+export type DeepMergeExtendedOptions = deepmerge.Options & {
+  isMergeableObject(value: unknown): boolean,
+  cloneUnlessOtherwiseSpecified(value: unknown, options: deepmerge.Options): unknown,
+};
+export type MergeSequenceFunction = (target: unknown[], source: unknown[], options: DeepMergeExtendedOptions) => unknown[];
+
 const mergeSequence: MergeSequenceFunction = (target, source, options) => {
   const destination = [...target];
 
@@ -53,9 +51,14 @@ function compare<T>(left: T, right: T): -1 | 0 | 1 {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function matchSchema<T extends object>(schema: FlatSchema<T>, require: SchemaMatcherRequirements, fieldPath: string[]): [] | [string] {
-  const result = matchSchemaRequirement(schema, fieldPath.join('/'), require);
-  return result ? [result] : [];
+function createMatchSchema<TNamed extends { name: string }>(descriptor: string): (schema: TNamed[], fieldPath: string[]) => ([] | [string]) {
+  return (schema, fieldPath) => {
+    const name = fieldPath.join('/');
+
+    const found = schema.find(f => f.name === name);
+
+    return found ? [] : [`Field ${name} is not ${descriptor}`];
+  }
 }
 
 // Used in jison parsers.
@@ -66,9 +69,9 @@ const dependencies = {
   compare,
   getValue,
   getStruct,
-  matchSchema,
   makeGeoPointFromPojo,
   makeGeoPolygon,
+  score,
 };
 
 function fn_geo_distance<T>(
@@ -122,7 +125,7 @@ function fn_search_ismatch(input: any, search: string, searchFields: string, que
   return fn_search_ismatchscoring(input, search, searchFields, queryType, searchMode) ? 1 : 0;
 }
 function fn_search_ismatchscoring(input: any, search: string, searchFields?: string, queryType?: 'full' | 'simple', searchMode?: 'any' | 'all') {
-  // TODO: Implement full-text search. Consider using lyra (no lucene syntax) or lunr (maybe a maintained fork?).
+  // TODO: Use analyzer to process search string.
   const fields = searchFields
     ? searchFields.split(',').map(f => f.trim())
     : Object.keys(input);
@@ -162,72 +165,67 @@ function fn_search_ismatchscoring(input: any, search: string, searchFields?: str
     }, 0);
 }
 
-export type ParserResult<TAst, TActions> = TAst & Omit<TActions, 'canApply'> & {
-  canApply: <T extends object>(schema: FlatSchema<T>) => string[]
-};
-export type Parser<R> = {
-  parse: (input: string) => R,
+export type Parser<R, Args extends unknown[] = []> = {
+  parse: (input: string, ...args: Args) => R,
 };
 
-export type FilterParserResult = ParserResult<FilterAst, FilterActions>;
-export type FilterParser = Parser<FilterParserResult>;
-export const filter: FilterParser = {
-  parse: (input: string) => {
-    const ast = {} as FilterAst & FilterActions;
-    _filter.parse(input, ast, dependencies, { fn_geo_distance, fn_geo_intersects, fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
-    return {
-      ...ast,
-      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'filterable'),
-    };
-  }
-};
-
-export type OrderByParserResult = ParserResult<OrderByAst, OrderByActions>;
-export type OrderByParser = Parser<OrderByParserResult>;
-export const orderBy: OrderByParser = {
-  parse: (input: string) => {
-    const ast = {} as OrderByAst & OrderByActions;
-    _orderBy.parse(input, ast, dependencies, { fn_search_score });
-    return {
-      ...ast,
-      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'sortable'),
-    };
-  }
-};
-
-export type SelectParserResult = ParserResult<SelectAst, SelectActions>;
+export type SelectParserResult = SelectAst & SelectActions;
 export type SelectParser = Parser<SelectParserResult>;
 export const select: SelectParser = {
   parse: (input: string) => {
     const ast = {} as SelectAst & SelectActions;
-    _select.parse(input, ast, dependencies, {});
+    _select.parse(input, ast, { ...dependencies, matchSchema: createMatchSchema<Retrievable>('retrievable') }, {});
     return {
       ...ast,
-      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'retrievable'),
     };
   }
 };
 
-export type SearchParserResult = ParserResult<SelectAst, SelectActions>;
+export type SearchParserResult = SelectAst & SelectActions;
 export type SearchParser = Parser<SearchParserResult>;
 export const search: SearchParser = {
   parse: (input: string) => {
     const ast = {} as SelectAst & SelectActions;
-    _select.parse(input, ast, dependencies, {});
+    _select.parse(input, ast, { ...dependencies, matchSchema: createMatchSchema<Searchable>('searchable') }, {});
     return {
       ...ast,
-      canApply: <T extends object>(schema: FlatSchema<T>) => ast.canApply(schema, 'searchable'),
       toPaths: () => toPaths(ast),
     };
   }
 };
 
-export type HighlighParserResult = ParserResult<SelectAst, SelectActions>;
+export type FilterParserResult = FilterAst & FilterActions;
+export type FilterParser = Parser<FilterParserResult>;
+export const filter: FilterParser = {
+  parse: (input: string) => {
+    const ast = {} as FilterAst & FilterActions;
+    // noinspection JSUnusedGlobalSymbols
+    _filter.parse(input, ast, { ...dependencies, matchSchema: createMatchSchema<Filterable>('filterable') }, { fn_geo_distance, fn_geo_intersects, fn_search_in, fn_search_ismatch, fn_search_ismatchscoring });
+    return {
+      ...ast,
+    };
+  }
+};
+
+export type OrderByParserResult = OrderByAst & OrderByActions;
+export type OrderByParser = Parser<OrderByParserResult>;
+export const orderBy: OrderByParser = {
+  parse: (input: string) => {
+    const ast = {} as OrderByAst & OrderByActions;
+    // noinspection JSUnusedGlobalSymbols
+    _orderBy.parse(input, ast, { ...dependencies, matchSchema: createMatchSchema<Sortable>('sortable') }, { fn_search_score });
+    return {
+      ...ast,
+    };
+  }
+};
+
+export type HighlighParserResult = SelectAst & SelectActions;
 export type HighlighParser = Parser<HighlighParserResult>;
 // TODO: highlight supports additional features like some/field/path-number to limit the highlight count
 export const highlight: HighlighParser = search;
 
-export type FacetParserResult = ParserResult<FacetAst, FacetActions>;
+export type FacetParserResult = FacetAst & FacetActions;
 export type FacetParser = Parser<FacetParserResult>;
 export const facet: FacetParser = {
   parse: (input: string) => {
@@ -283,9 +281,9 @@ export const facet: FacetParser = {
 
     const fieldPath = field.split('/');
 
-    function canApply<T extends object>(schema: FlatSchema<T>) {
-      const result = matchSchemaRequirement(schema, field, 'facetable');
-      return result ? [result] : [];
+    const matchSchema = createMatchSchema<Facetable>('facetable');
+    function canApply(schema: Facetable[]) {
+      return matchSchema(schema, fieldPath);
     }
 
     function apply<T extends object>(accumulator: FacetResults, input: T) {
@@ -309,3 +307,13 @@ export const facet: FacetParser = {
     return { field, params, canApply, apply };
   }
 }
+
+export type SimpleParserResult = SimpleAst & SimpleActions;
+export type SimpleParser = Parser<SimpleParserResult, [searchMode: 'any' | 'all']>;
+export const simple: SimpleParser = {
+  parse: (input: string, searchMode) => {
+    const ast = {} as SimpleAst & SimpleActions;
+    _simple.parse(input, ast, searchMode, dependencies);
+    return ast;
+  }
+};

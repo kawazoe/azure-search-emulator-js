@@ -41,7 +41,7 @@ time_zone_part      Z|([\-\+](([0-1][0-9])|(2[0-3]))\:[0-5][0-9])
 [a-zA-Z_][a-zA-Z_0-9]*                     { return 'IDENTIFIER' }
 [\-\+]?[0-9]+\.[0-9]+(\e[\-\+]?[0-9]+)?    { return 'FLOAT_LITERAL' }
 [\-\+]?[0-9]+                              { return 'INTEGER_LITERAL' }
-\'([^']|(''))*\'                           { return 'STRING_LITERAL' }
+\'((\\\')|[^\'])*\'                        { return 'STRING_LITERAL' }
 
 "/all"                                     { return 'FP_ALL' }
 "/any"                                     { return 'FP_ANY' }
@@ -117,7 +117,7 @@ variable
         {
         const { getValue, matchSchema } = yy.deps;
         const value = [$1, ...$2.map(([sep, node]) => node)];
-        const canApply = (schema, require) => matchSchema(schema, require, value);
+        const canApply = (schema) => matchSchema(schema, value);
         const apply = (input) => getValue(input, value);
         $$ = { type: "FIELD_PATH", value, canApply, apply };
         }
@@ -128,7 +128,7 @@ variable
         {
         const { getValue, matchSchema } = yy.deps;
         const value = $1;
-        const canApply = (schema, require) => matchSchema(schema, require, [value]);
+        const canApply = (schema) => matchSchema(schema, [value]);
         const apply = (input) => input[value];
         $$ = { type: "IDENTIFIER", value, canApply, apply };
         }

@@ -4,7 +4,8 @@ import {
   Scorer,
   SearchBackend,
   SearchEngine,
-  SuggestEngine
+  SuggestEngine,
+  AnalyzerService,
 } from '../dist/azure-search-emulator.es.js';
 
 // Tooling
@@ -72,27 +73,6 @@ function continuousMode(set, keySelector, targetDeviation, precision) {
   };
 
   return _rec(precision);
-}
-
-function hydrateParsedProxies(document) {
-  for (const key in document) {
-    const target = document[key];
-
-    if (target.kind === 'text') {
-      // noinspection BadExpressionStatementJS
-      target.normalized?.length;
-      // noinspection BadExpressionStatementJS
-      target.words?.length;
-    }
-    if (target.kind === 'geo') {
-      // noinspection BadExpressionStatementJS
-      target.points?.length;
-    }
-    if (target.kind === 'generic') {
-      // noinspection BadExpressionStatementJS
-      target.normalized?.length;
-    }
-  }
 }
 
 const tasks = [];
@@ -180,28 +160,24 @@ const suggesters = [
   {
     name: 'sg',
     searchMode: 'analyzingInfixMatching',
-    fields: schemaService.fullSchema
-      .filter(([,v]) => v.type === 'Edm.String' || v.type === 'Collection(Edm.String)')
-      .map(([k]) => k)
+    fields: schemaService.suggestableSchema.map(e => e.name),
   }
 ];
 const suggesterProvider = name => suggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
 
-function peopleToStoredDocument(document) {
+export const analyzer = new AnalyzerService(schemaService);
+
+export function peopleToStoredDocument(document){
   return {
-    key: document.id,
+    key: 'id',
     original: document,
-    parsed: schemaService.parseDocument(document),
+    analyzed: analyzer.analyzeDocument(document),
   };
 }
 
 function createLargeDataSet() {
-  return Array.from(new Array(1234))
-    .map((_, i) => {
-      const doc = peopleToStoredDocument({ id: `${i}`, fullName: `${i}` });
-      hydrateParsedProxies(doc.parsed);
-      return doc;
-    });
+  return Array.from(new Array(2_500))
+    .map((_, i) => peopleToStoredDocument({ id: `${i}`, fullName: `${i}`.split('').join(' ') }));
 }
 
 function createSearchEngine() {
@@ -209,7 +185,7 @@ function createSearchEngine() {
 
   return new SearchEngine(
     new SearchBackend(schemaService, () => documents),
-    new Scorer([], null)
+    new Scorer(schemaService, [], null),
   );
 }
 
@@ -245,7 +221,7 @@ describe('SearchEngine', () => {
   beforeAll(() => sut = createSearchEngine());
 
   bench('large query', () => {
-    sut.search({ search: '[13579]', top: Number.MAX_SAFE_INTEGER });
+    sut.search({ search: '1|3|5|7|9', top: Number.MAX_SAFE_INTEGER });
   });
 });
 
@@ -254,7 +230,7 @@ describe('SuggestEngine', () => {
   beforeAll(() => sut = createSuggestEngine());
 
   bench('large query', () => {
-    sut.suggest({ search: '[13579]', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
+    sut.suggest({ search: '1', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
   });
 });
 
@@ -263,6 +239,6 @@ describe('AutocompleteEngine', () => {
   beforeAll(() => sut = createAutocompleteEngine());
 
   bench('large query', () => {
-    sut.autocomplete({ search: '[13579]', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
+    sut.autocomplete({ search: '1', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
   });
 });

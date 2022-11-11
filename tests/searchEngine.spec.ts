@@ -9,7 +9,7 @@ import { SearchEngine, SearchBackend, Scorer } from '../src';
 function createEmpty() {
   return new SearchEngine(
     new SearchBackend<People>(peopleSchemaService, () => []),
-    new Scorer([], null),
+    new Scorer(peopleSchemaService, [], null),
   );
 }
 function createBasic() {
@@ -23,7 +23,21 @@ function createBasic() {
         peopleToStoredDocument({ id: '4', fullName: 'buzz' }),
       ]
     ),
-    new Scorer([], null),
+    new Scorer(peopleSchemaService, [], null),
+  );
+}
+function createMultiWords() {
+  return new SearchEngine(
+    new SearchBackend<People>(
+    peopleSchemaService,
+    () => [
+        peopleToStoredDocument({ id: '1', fullName: 'f o o' }),
+        peopleToStoredDocument({ id: '2', fullName: 'b a r' }),
+        peopleToStoredDocument({ id: '3', fullName: 'b i z' }),
+        peopleToStoredDocument({ id: '4', fullName: 'b u z z' }),
+      ]
+    ),
+    new Scorer(peopleSchemaService, [], null),
   );
 }
 function createComplex(scorer?: Scorer<People>) {
@@ -56,7 +70,7 @@ function createComplex(scorer?: Scorer<People>) {
       peopleSchemaService,
       () => [peopleToStoredDocument(document)],
     ),
-    scorer ?? new Scorer<People>([], null),
+    scorer ?? new Scorer<People>(peopleSchemaService, [], null),
   );
 }
 function createFacetable() {
@@ -70,19 +84,19 @@ function createFacetable() {
         peopleToStoredDocument({ id: '4', fullName: 'buzz', income: 70, addresses: [{ parts: 'adr4', kind: 'home' }] }),
       ]
     ),
-    new Scorer([], null),
+    new Scorer(peopleSchemaService, [], null),
   );
 }
 function createLargeDataSet() {
-  const documents = Array.from(new Array(1234))
-    .map((_, i) => peopleToStoredDocument({ id: `${i}`, fullName: `${i}` }));
+  const documents = Array.from(new Array(2_500))
+    .map((_, i) => peopleToStoredDocument({ id: `${i}`, fullName: `${i}`.split('').join(' ') }));
 
   return new SearchEngine(
     new SearchBackend<People>(
       peopleSchemaService,
       () => documents
     ),
-    new Scorer([], null),
+    new Scorer(peopleSchemaService, [], null),
   );
 }
 
@@ -105,10 +119,10 @@ describe('SearchEngine', () => {
       expect(results.value).toEqual([]);
     });
 
-    it('should return matching search as regex', () => {
+    it('should return matching search as simple query', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'b[ai]' });
+      const results = sut.search({ search: 'bar|biz' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '2', fullName: 'bar' },
@@ -121,7 +135,7 @@ describe('SearchEngine', () => {
     it('should only search in searchFields', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: '1|b', searchFields: 'id' });
+      const results = sut.search({ search: '1|b*', searchFields: 'id' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '1', fullName: 'foo' },
@@ -131,7 +145,7 @@ describe('SearchEngine', () => {
     it('should search in all provided searchFields', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: '1|b', searchFields: 'id, fullName' });
+      const results = sut.search({ search: '1|b*', searchFields: 'id, fullName' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '1', fullName: 'foo' },
@@ -226,21 +240,22 @@ describe('SearchEngine', () => {
     it('should produce search score based on match length', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'ba' });
+      const results = sut.search({ search: 'ba*' });
 
       // 2 for /ba/ at index 0 of bar
       expect(results.value[0]['@search.score']).toBe(2);
     });
 
     it('should produce search score based on token count and location', () => {
-      const sut = createBasic();
+      const sut = createMultiWords();
 
       const results = sut.search({ search: 'z' });
 
-      // 0.5 for /z/ at index 2 of buzz + 0.25 for /z/ at index 3 of buzz
-      expect(results.value[0]['@search.score']).toBeCloseTo(0.75);
-      // 0.333 for /z/ at index 2 of baz
-      expect(results.value[1]['@search.score']).toBeCloseTo(0.333333);
+      // found ["z"] in ["b","u","z","z"] at 4 for 1 out of 7 scored 0.4285714285714286
+      // found ["z"] in ["b","u","z","z"] at 6 for 1 out of 7 scored 0.1428571428571429
+      expect(results.value[0]['@search.score']).toBeCloseTo(0.57);
+      // found ["z"] in ["b","i","z"] at 4 for 1 out of 5 scored 0.19999999999999996
+      expect(results.value[1]['@search.score']).toBeCloseTo(0.2);
     });
   });
 
@@ -248,7 +263,7 @@ describe('SearchEngine', () => {
     it('should produce search features for each match', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: '2|b[a]' });
+      const results = sut.search({ search: '2|bar' });
 
       const features = results.value[0]['@search.features'];
       expect(features).toHaveProperty('id');
@@ -256,37 +271,37 @@ describe('SearchEngine', () => {
     });
 
     it('should produce search features based on search matches', () => {
-      const sut = createBasic();
+      const sut = createMultiWords();
 
-      const results = sut.search({ search: 'fo|o' });
+      const results = sut.search({ search: '"f o"|o' });
 
       const feature = results.value[0]['@search.features']['fullName'];
-      // 1 for 'fo' in foo, 1 for 'o' in foo
+      // matched "f o" and "o" : 2 ngrams
       expect(feature.uniqueTokenMatches).toBe(2);
-      // 2 char for 'fo' in foo, 1 char for 'o' in foo; length 3 is 100% of 'foo' length
-      expect(feature.similarityScore).toBe(1);
-      // 1 for 'fo' in foo, 1 for 'o' in foo
-      expect(feature.termFrequency).toBe(2);
+      // "f o" matched "f"+"o" ngrams for length 2, "o" matched "o"+"o" ngrams for length 2 : 4 / 3  ngrams
+      expect(feature.similarityScore).toBe(4/3);
+      // matched "f o", "o", and "o" : 3 ngrams
+      expect(feature.termFrequency).toBe(3);
     });
   });
 
   describe('highlights', () => {
     it('should produce search highlights', () => {
-      const sut = createBasic();
+      const sut = createMultiWords();
 
-      const results = sut.search({ search: 'fo|o', highlight: 'fullName' });
+      const results = sut.search({ search: '"f o"|o', highlight: 'fullName' });
 
       const highlights = results.value[0]['@search.highlights'];
-      expect(highlights['fullName']).toEqual(['<em>fo</em>o', 'fo<em>o</em>']);
+      expect(highlights['fullName']).toEqual(['<em>f o</em> o', 'f <em>o</em> o', 'f o <em>o</em>']);
     });
 
     it('should use search highlights pre/post fixes', () => {
-      const sut = createBasic();
+      const sut = createMultiWords();
 
-      const results = sut.search({ search: 'fo|o', highlight: 'fullName', highlightPostTag: 'POST', highlightPreTag: 'PRE' });
+      const results = sut.search({ search: '"f o"|o', highlight: 'fullName', highlightPostTag: 'POST', highlightPreTag: 'PRE' });
 
       const highlights = results.value[0]['@search.highlights'];
-      expect(highlights['fullName']).toEqual(['PREfoPOSTo', 'foPREoPOST']);
+      expect(highlights['fullName']).toEqual(['PREf oPOST o', 'f PREoPOST o', 'f o PREoPOST']);
     });
   });
 
@@ -294,7 +309,7 @@ describe('SearchEngine', () => {
     it('should limit results to 50 items per page by default', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.search({ search: '[13579]' });
+      const results = sut.search({ search: '1|3|5|7|9' });
 
       expect(results.value.length).toBe(50);
     });
@@ -302,7 +317,7 @@ describe('SearchEngine', () => {
     it('should limit results to 1000 items per page max', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.search({ search: '[13579]', top: Number.MAX_SAFE_INTEGER });
+      const results = sut.search({ search: '1|3|5|7|9', top: Number.MAX_SAFE_INTEGER });
 
       expect(results.value.length).toBe(1000);
     });
@@ -319,7 +334,7 @@ describe('SearchEngine', () => {
     it('should not provide info for next page when all results fit on a single page', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'b[ai]' });
+      const results = sut.search({ search: 'ba|bi' });
 
       expect(results['@search.nextPageParameters']).toBe(undefined);
       expect(results['@odata.nextLink']).toBe(undefined);
@@ -328,10 +343,10 @@ describe('SearchEngine', () => {
     it('should provide info for next page when more than one page', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.search({ search: '[13579]', top: 1500 });
+      const results = sut.search({ search: '1|3|5|7|9', top: 1500 });
 
-      expect(results['@search.nextPageParameters']).toEqual({ search: '[13579]', skip: 1000, top: 500 });
-      expect(results['@odata.nextLink']).toBe('search=%5B13579%5D&%24skip=1000&%24top=500');
+      expect(results['@search.nextPageParameters']).toEqual({ search: '1|3|5|7|9', skip: 1000, top: 500 });
+      expect(results['@odata.nextLink']).toBe('search=1%7C3%7C5%7C7%7C9&%24skip=1000&%24top=500');
     });
   });
 
@@ -357,7 +372,7 @@ describe('SearchEngine', () => {
     it('should return matching filter and still consider search', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'b', filter: 'id lt 4' });
+      const results = sut.search({ search: 'b*', filter: 'id lt 4' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '2', fullName: 'bar' },
@@ -368,9 +383,9 @@ describe('SearchEngine', () => {
     it('should impact search score', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'ba', filter: "fullName eq 'bar'" });
+      const results = sut.search({ search: 'ba*', filter: "fullName eq 'bar'" });
 
-      // 1 for `eq`, 1 for /b/, and 1 for /[a]/
+      // 1 for `eq`, 2 for "ba"
       expect(results.value[0]['@search.score']).toEqual(3);
     });
 
@@ -404,7 +419,7 @@ describe('SearchEngine', () => {
     it('should match returned results length when query fits in a single page', () => {
       const sut = createBasic();
 
-      const results = sut.search({ count: true, search: 'b[ai]' });
+      const results = sut.search({ count: true, search: 'bar|biz' });
 
       expect(results['@odata.count']).toBe(2);
     });
@@ -412,9 +427,9 @@ describe('SearchEngine', () => {
     it('should match total results length across all pages on large queries', () => {
       const sut = createLargeDataSet();
 
-      const results = sut.search({ count: true, search: '[13579]' });
+      const results = sut.search({ count: true, search: '1|3|5|7|9' });
 
-      expect(results['@odata.count']).toBe(1109);
+      expect(results['@odata.count']).toBe(2300);
     });
   });
 
@@ -456,7 +471,7 @@ describe('SearchEngine', () => {
     it('should order results by meta', () => {
       const sut = createBasic();
 
-      const results = sut.search({ search: 'biz|bu|b', orderBy: 'search.score() desc' });
+      const results = sut.search({ search: 'biz|bu*|b*', orderBy: 'search.score() desc' });
 
       expect(results.value.map(stripSearchMeta)).toEqual([
         { id: '3', fullName: 'biz' },
@@ -561,6 +576,7 @@ describe('SearchEngine', () => {
     it('should use scoring strategies when available', () => {
       const sut = createComplex(
         new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'doubleFullName',
             text: {

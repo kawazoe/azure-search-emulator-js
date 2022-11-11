@@ -1,5 +1,3 @@
-import type deepmerge from 'deepmerge';
-
 export interface JisonParserErrorHash {
   recoverable: boolean;
   destroy: () => void;
@@ -15,25 +13,13 @@ export interface JisonParserError {
   set message(msg);
 }
 
-export type DeepMergeExtendedOptions = deepmerge.Options & {
-  isMergeableObject(value: unknown): boolean,
-  cloneUnlessOtherwiseSpecified(value: unknown, options: deepmerge.Options): unknown,
-};
-
-export type MergeDeepFunction = (target: Partial<unknown>, source: Partial<unknown>, options: DeepMergeExtendedOptions) => unknown;
-export type ParseFunction<TAst> = (
+export type ParseFunction<TAst, TArgs extends unknown[]> = (
   input: string,
   ast: TAst,
-  deps: {
-    mergeDeep: MergeDeepFunction,
-    mergeSequence: MergeSequenceFunction,
-    compare: <T>(left: T, right: T) => -1 | 0 | 1,
-  },
-  fns: Record<string, Function>
+  ...args: TArgs
 ) => boolean;
-export type MergeSequenceFunction = (target: unknown[], source: unknown[], options: DeepMergeExtendedOptions) => unknown[];
 
-export interface OParser<TAst> {
+export interface OParser<TAst, TArgs extends unknown[]> {
   trace: () => {},
   JisonParserError: JisonParserError,
   yy: {},
@@ -60,18 +46,18 @@ export interface OParser<TAst> {
   describeSymbol: (symbol: number) => string | null;
   collect_expected_token_set: (state: number, do_not_describe: boolean) => string[];
   parseError: (str: string, hash: JisonParserErrorHash, ExceptionClass?: Error) => void;
-  parse: ParseFunction<TAst>
+  parse: ParseFunction<TAst, TArgs>
   originalParseError: (str: string, hash: JisonParserErrorHash, ExceptionClass?: Error) => void;
   originalQuoteName: (id_str: string) => string;
 }
 
-export interface YaccLexParser<TAst> extends OParser<TAst> {
+export interface YaccLexParser<TAst, TArgs extends unknown[]> extends OParser<TAst, TArgs> {
   yy: {};
-  Parser: OParser<TAst>
+  Parser: OParser<TAst, TArgs>
 }
 
-export interface JisonParser<TAst> {
-  parser: OParser<TAst>;
-  Parser: YaccLexParser<TAst>;
-  parse: ParseFunction<TAst>;
+export interface JisonParser<TAst, TArgs extends unknown[]> {
+  parser: OParser<TAst, TArgs>;
+  Parser: YaccLexParser<TAst, TArgs>;
+  parse: ParseFunction<TAst, TArgs>;
 }

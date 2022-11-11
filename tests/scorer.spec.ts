@@ -6,7 +6,7 @@ import { Scorer } from '../src';
 import type { People } from './lib/mockSchema';
 import { addTime, subtractTime } from '../src/lib/dates';
 import { makeGeoJsonPoint } from '../src/lib/geo';
-import { peopleSchemaService } from './lib/mockSchema';
+import { peopleAnalyzer, peopleSchemaService } from './lib/mockSchema';
 
 const profileDoubleFullName: ScoringProfile<People> = {
   name: 'doubleFullName',
@@ -20,10 +20,10 @@ const profileDoubleFullName: ScoringProfile<People> = {
 describe('Scorer', () => {
   describe('profile selection', () => {
     it('should use the null strategy when no strategy is available', () => {
-      const sut = new Scorer<People>([], null);
+      const sut = new Scorer<People>(peopleSchemaService, [], null);
 
-      const doc = peopleSchemaService.parseDocument({ id: '1' });
-      const bases: ScoringBases<People> = [
+      const doc = peopleAnalyzer.analyzeDocument({ id: '1' });
+      const bases: ScoringBases = [
         { key: 'id', score: 3 },
         { key: 'fullName', score: 2 },
       ];
@@ -34,10 +34,10 @@ describe('Scorer', () => {
     });
 
     it('should use the null strategy when no strategy is applied', () => {
-      const sut = new Scorer([profileDoubleFullName], null);
+      const sut = new Scorer(peopleSchemaService, [profileDoubleFullName], null);
 
-      const doc = peopleSchemaService.parseDocument({ id: '1' });
-      const bases: ScoringBases<People> = [
+      const doc = peopleAnalyzer.analyzeDocument({ id: '1' });
+      const bases: ScoringBases = [
         { key: 'id', score: 3 },
         { key: 'fullName', score: 2 },
       ];
@@ -48,10 +48,10 @@ describe('Scorer', () => {
     });
 
     it('should use the default strategy as fallback', () => {
-      const sut = new Scorer([profileDoubleFullName], 'doubleFullName');
+      const sut = new Scorer(peopleSchemaService, [profileDoubleFullName], 'doubleFullName');
 
-      const doc = peopleSchemaService.parseDocument({ id: '1' });
-      const bases: ScoringBases<People> = [
+      const doc = peopleAnalyzer.analyzeDocument({ id: '1' });
+      const bases: ScoringBases = [
         { key: 'fullName', score: 2 },
       ];
 
@@ -61,10 +61,10 @@ describe('Scorer', () => {
     });
 
     it('should use the requested strategy', () => {
-      const sut = new Scorer([profileDoubleFullName], null);
+      const sut = new Scorer(peopleSchemaService, [profileDoubleFullName], null);
 
-      const doc = peopleSchemaService.parseDocument({ id: '1' });
-      const bases: ScoringBases<People> = [
+      const doc = peopleAnalyzer.analyzeDocument({ id: '1' });
+      const bases: ScoringBases = [
         { key: 'fullName', score: 2 },
       ];
 
@@ -78,6 +78,7 @@ describe('Scorer', () => {
     describe('text', () => {
       it('should multiply base by weight', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             text: {
@@ -91,7 +92,7 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({
+        const doc = peopleAnalyzer.analyzeDocument({
           id: '1',
           fullName: 'foo',
           addresses: [
@@ -99,7 +100,7 @@ describe('Scorer', () => {
           ],
           phones: ['123'],
         });
-        const bases: ScoringBases<People> = [
+        const bases: ScoringBases = [
           { key: 'fullName', score: 3 },
           { key: 'addresses/kind', score: 4 },
           { key: 'phones', score: 0.3 },
@@ -115,6 +116,7 @@ describe('Scorer', () => {
       describe('magnitude', () => {
         it('should boost numbers by interpolated value', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -131,14 +133,14 @@ describe('Scorer', () => {
             'default',
           );
 
-          const far =     peopleSchemaService.parseDocument({ id: '1', ratio: 5 });
-          const lowNear = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
-          const low =     peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
-          const middle =  peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
-          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+          const far =     peopleAnalyzer.analyzeDocument({ id: '1', ratio: 5 });
+          const lowNear = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 9 });
+          const low =     peopleAnalyzer.analyzeDocument({ id: '1', ratio: 10 });
+          const middle =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+          const up =      peopleAnalyzer.analyzeDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 21 });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'ratio', score: 3 },
           ];
 
@@ -154,6 +156,7 @@ describe('Scorer', () => {
 
         it('should reset to start when beyond range', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -169,10 +172,10 @@ describe('Scorer', () => {
             'default',
           );
 
-          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
-          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+          const up =      peopleAnalyzer.analyzeDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 21 });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'ratio', score: 3 },
           ];
 
@@ -184,6 +187,7 @@ describe('Scorer', () => {
 
         it('should boost numbers by inverted interpolated value ', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -200,14 +204,14 @@ describe('Scorer', () => {
             'default',
           );
 
-          const far =     peopleSchemaService.parseDocument({ id: '1', ratio: 5 });
-          const lowNear = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
-          const low =     peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
-          const middle =  peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
-          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+          const far =     peopleAnalyzer.analyzeDocument({ id: '1', ratio: 5 });
+          const lowNear = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 9 });
+          const low =     peopleAnalyzer.analyzeDocument({ id: '1', ratio: 10 });
+          const middle =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+          const up =      peopleAnalyzer.analyzeDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 21 });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'ratio', score: 3 },
           ];
 
@@ -223,6 +227,7 @@ describe('Scorer', () => {
 
         it('should reset to end when beyond range ', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -238,14 +243,14 @@ describe('Scorer', () => {
             'default',
           );
 
-          const far =     peopleSchemaService.parseDocument({ id: '1', ratio: 5 });
-          const lowNear = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
-          const low =     peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
-          const middle =  peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-          const up =      peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
-          const upNear =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+          const far =     peopleAnalyzer.analyzeDocument({ id: '1', ratio: 5 });
+          const lowNear = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 9 });
+          const low =     peopleAnalyzer.analyzeDocument({ id: '1', ratio: 10 });
+          const middle =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+          const up =      peopleAnalyzer.analyzeDocument({ id: '1', ratio: 20 });
+          const upNear =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 21 });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'ratio', score: 3 },
           ];
 
@@ -273,6 +278,7 @@ describe('Scorer', () => {
 
         it('should boost dates until now in a given duration', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -287,14 +293,14 @@ describe('Scorer', () => {
             'default',
           );
 
-          const past =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 2) } });
-          const p1dt1s =  peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 1, 0, 0, 1) } });
-          const p1d =     peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 1) } });
-          const pt12h =   peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 0, 12) } });
-          const nowd =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: now } });
-          const future =  peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 0, 0, 0, 1) } });
+          const past =    peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: subtractTime(now, 2) } });
+          const p1dt1s =  peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: subtractTime(now, 1, 0, 0, 1) } });
+          const p1d =     peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: subtractTime(now, 1) } });
+          const pt12h =   peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: subtractTime(now, 0, 12) } });
+          const nowd =    peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: now } });
+          const future =  peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: addTime(now, 0, 0, 0, 1) } });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'metadata/createdOn', score: 3 },
           ];
 
@@ -310,6 +316,7 @@ describe('Scorer', () => {
 
         it('should boost dates after now in a given duration', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -324,13 +331,13 @@ describe('Scorer', () => {
             'default',
           );
 
-          const pt12h =   peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: subtractTime(now, 0, 12) } });
-          const nowd =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: now } });
-          const npt12h =  peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 0, 12) } });
-          const np1d =    peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 1) } });
-          const np1dt1s = peopleSchemaService.parseDocument({ id: '1', metadata: { createdOn: addTime(now, 1, 0, 0, 1) } });
+          const pt12h =   peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: subtractTime(now, 0, 12) } });
+          const nowd =    peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: now } });
+          const npt12h =  peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: addTime(now, 0, 12) } });
+          const np1d =    peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: addTime(now, 1) } });
+          const np1dt1s = peopleAnalyzer.analyzeDocument({ id: '1', metadata: { createdOn: addTime(now, 1, 0, 0, 1) } });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'metadata/createdOn', score: 3 },
           ];
 
@@ -347,6 +354,7 @@ describe('Scorer', () => {
       describe('distance', () => {
         it('should boost locations closer to the reference point within a distance radius', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
@@ -362,13 +370,13 @@ describe('Scorer', () => {
             'default',
           );
 
-          const far =       peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-71.20688089878229, 46.80772501699039) }] });
-          const d100k200m = peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-72.55136962206396, 46.07725335123803) }] });
-          const d100k =     peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-72.55341125057537, 46.07613738135688) }] });
-          const d50k =      peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-73.05641549253124, 45.79361063088562) }] });
-          const rp =        peopleSchemaService.parseDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-73.5543295037799, 45.50890239725307) }] });
+          const far =       peopleAnalyzer.analyzeDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-71.20688089878229, 46.80772501699039) }] });
+          const d100k200m = peopleAnalyzer.analyzeDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-72.55136962206396, 46.07725335123803) }] });
+          const d100k =     peopleAnalyzer.analyzeDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-72.55341125057537, 46.07613738135688) }] });
+          const d50k =      peopleAnalyzer.analyzeDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-73.05641549253124, 45.79361063088562) }] });
+          const rp =        peopleAnalyzer.analyzeDocument({ id: '1', addresses: [{location: makeGeoJsonPoint(-73.5543295037799, 45.50890239725307) }] });
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'addresses/location', score: 3 },
           ];
 
@@ -385,11 +393,12 @@ describe('Scorer', () => {
       describe('tag', () => {
         it('should boost text as a larger proportion of the words are tags', () => {
           const sut = new Scorer<People>(
+            peopleSchemaService,
             [{
               name: 'default',
               functions: [{
                 type: 'tag',
-                fieldName: 'fullName',
+                fieldName: 'metadata/tags',
                 boost: 2,
                 tag: {
                   tagsParameter: 't',
@@ -399,14 +408,14 @@ describe('Scorer', () => {
             'default',
           );
 
-          const mock =         peopleSchemaService.parseDocument({ id: '1', fullName: 'mock' });
-          const mockfoo =      peopleSchemaService.parseDocument({ id: '1', fullName: 'mockfoo' });
-          const mock_foo =     peopleSchemaService.parseDocument({ id: '1', fullName: 'mock foo' });
-          const mock_foobar =  peopleSchemaService.parseDocument({ id: '1', fullName: 'mock foobar' });
-          const mock_foo_bar = peopleSchemaService.parseDocument({ id: '1', fullName: 'mock foo bar' });
-          const foo_bar =      peopleSchemaService.parseDocument({ id: '1', fullName: 'foo bar' });
+          const mock =         peopleAnalyzer.analyzeDocument({ id: '1', metadata: { tags: ['mock'] }});
+          const mockfoo =      peopleAnalyzer.analyzeDocument({ id: '1', metadata: { tags: ['mockfoo'] }});
+          const mock_foo =     peopleAnalyzer.analyzeDocument({ id: '1', metadata: { tags: ['mock', 'foo'] }});
+          const mock_foobar =  peopleAnalyzer.analyzeDocument({ id: '1', metadata: { tags: ['mock', 'foobar'] }});
+          const mock_foo_bar = peopleAnalyzer.analyzeDocument({ id: '1', metadata: { tags: ['mock', 'foo', 'bar'] }});
+          const foo_bar =      peopleAnalyzer.analyzeDocument({ id: '1', metadata: { tags: ['foo', 'bar'] }});
 
-          const bases: ScoringBases<People> = [
+          const bases: ScoringBases = [
             { key: 'fullName', score: 3 },
           ];
 
@@ -414,10 +423,10 @@ describe('Scorer', () => {
 
           expect(strats(mock,         bases)).toBeCloseTo(3, 4);
           expect(strats(mockfoo,      bases)).toBeCloseTo(3, 4);
-          expect(strats(mock_foo,     bases)).toBeCloseTo(4.5, 4);
+          expect(strats(mock_foo,     bases)).toBeCloseTo(6, 4);
           expect(strats(mock_foobar,  bases)).toBeCloseTo(3, 4);
-          expect(strats(mock_foo_bar, bases)).toBeCloseTo(5, 4);
-          expect(strats(foo_bar,      bases)).toBeCloseTo(6, 4);
+          expect(strats(mock_foo_bar, bases)).toBeCloseTo(9, 4);
+          expect(strats(foo_bar,      bases)).toBeCloseTo(9, 4);
         });
       });
     });
@@ -425,6 +434,7 @@ describe('Scorer', () => {
     describe('interpolation', () => {
       it('should be linear by default', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [{
@@ -440,11 +450,11 @@ describe('Scorer', () => {
           'default',
         );
 
-        const start =  peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
-        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-        const end =    peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
+        const start =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 10 });
+        const middle = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+        const end =    peopleAnalyzer.analyzeDocument({ id: '1', ratio: 20 });
 
-        const bases: ScoringBases<People> = [
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -457,6 +467,7 @@ describe('Scorer', () => {
 
       it('should get max boost right away with constant', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [{
@@ -473,12 +484,12 @@ describe('Scorer', () => {
           'default',
         );
 
-        const before = peopleSchemaService.parseDocument({ id: '1', ratio: 9 });
-        const start =  peopleSchemaService.parseDocument({ id: '1', ratio: 10 });
-        const end =    peopleSchemaService.parseDocument({ id: '1', ratio: 20 });
-        const after =  peopleSchemaService.parseDocument({ id: '1', ratio: 21 });
+        const before = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 9 });
+        const start =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 10 });
+        const end =    peopleAnalyzer.analyzeDocument({ id: '1', ratio: 20 });
+        const after =  peopleAnalyzer.analyzeDocument({ id: '1', ratio: 21 });
 
-        const bases: ScoringBases<People> = [
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -492,6 +503,7 @@ describe('Scorer', () => {
 
       it('should get half boost half way with linear', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [{
@@ -508,8 +520,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-        const bases: ScoringBases<People> = [
+        const middle = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -520,6 +532,7 @@ describe('Scorer', () => {
 
       it('should get over half boost half way with quadratic', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [{
@@ -536,8 +549,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-        const bases: ScoringBases<People> = [
+        const middle = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -548,6 +561,7 @@ describe('Scorer', () => {
 
       it('should get under half boost half way with logarithmic', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [{
@@ -564,8 +578,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const middle = peopleSchemaService.parseDocument({ id: '1', ratio: 15 });
-        const bases: ScoringBases<People> = [
+        const middle = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 15 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -578,6 +592,7 @@ describe('Scorer', () => {
     describe('aggregation', () => {
       it('should sum by default', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [
@@ -604,8 +619,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
-        const bases: ScoringBases<People> = [
+        const doc = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -618,6 +633,7 @@ describe('Scorer', () => {
 
       it('should sum individual function results', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [
@@ -645,8 +661,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
-        const bases: ScoringBases<People> = [
+        const doc = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -659,6 +675,7 @@ describe('Scorer', () => {
 
       it('should average individual function results', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [
@@ -686,8 +703,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
-        const bases: ScoringBases<People> = [
+        const doc = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -700,6 +717,7 @@ describe('Scorer', () => {
 
       it('should take the minimum function result', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [
@@ -727,8 +745,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
-        const bases: ScoringBases<People> = [
+        const doc = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -741,6 +759,7 @@ describe('Scorer', () => {
 
       it('should take the maximum function result', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [
@@ -768,8 +787,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
-        const bases: ScoringBases<People> = [
+        const doc = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 
@@ -782,6 +801,7 @@ describe('Scorer', () => {
 
       it('should take the first function result', () => {
         const sut = new Scorer<People>(
+          peopleSchemaService,
           [{
             name: 'default',
             functions: [
@@ -809,8 +829,8 @@ describe('Scorer', () => {
           'default',
         );
 
-        const doc = peopleSchemaService.parseDocument({ id: '1', ratio: 12 });
-        const bases: ScoringBases<People> = [
+        const doc = peopleAnalyzer.analyzeDocument({ id: '1', ratio: 12 });
+        const bases: ScoringBases = [
           { key: 'ratio', score: 3 },
         ];
 

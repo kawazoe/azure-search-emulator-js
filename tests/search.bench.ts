@@ -4,7 +4,6 @@ import { AutocompleteEngine, Scorer, SearchBackend, SearchEngine, SuggestEngine 
 
 import type { People } from './lib/mockSchema';
 import {
-  hydrateParsedProxies,
   peopleSchemaKey,
   peopleSchemaService,
   peopleSuggesterProvider,
@@ -12,12 +11,8 @@ import {
 } from './lib/mockSchema';
 
 function createLargeDataSet() {
-  return Array.from(new Array(1234))
-    .map((_, i) => {
-      const doc = peopleToStoredDocument({ id: `${i}`, fullName: `${i}` });
-      hydrateParsedProxies(doc.parsed);
-      return doc;
-    });
+  return Array.from(new Array(2_500))
+    .map((_, i) => peopleToStoredDocument({ id: `${i}`, fullName: `${i}`.split('').join(' ') }));
 }
 
 function createSearchEngine() {
@@ -28,7 +23,7 @@ function createSearchEngine() {
       peopleSchemaService,
       () => documents
     ),
-    new Scorer([], null),
+    new Scorer(peopleSchemaService, [], null),
   );
 }
 
@@ -57,11 +52,11 @@ function createAutocompleteEngine() {
   );
 }
 
-describe.only('SearchEngine', () => {
+describe('SearchEngine', () => {
   const sut = createSearchEngine();
 
   bench('large query', () => {
-    sut.search({ search: '[13579]', top: Number.MAX_SAFE_INTEGER });
+    sut.search({ search: '1|3|5|7|9', top: Number.MAX_SAFE_INTEGER });
   });
 });
 
@@ -69,7 +64,7 @@ describe('SuggestEngine', () => {
   const sut = createSuggestEngine();
 
   bench('large query', () => {
-    sut.suggest({ search: '[13579]', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
+    sut.suggest({ search: '1', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
   });
 });
 
@@ -77,6 +72,6 @@ describe('AutocompleteEngine', () => {
   const sut = createAutocompleteEngine();
 
   bench('large query', () => {
-    sut.autocomplete({ search: '[13579]', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
+    sut.autocomplete({ search: '1', suggesterName: 'sg', top: Number.MAX_SAFE_INTEGER });
   });
 });

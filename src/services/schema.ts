@@ -1,26 +1,33 @@
 import { _never } from '../lib/_never';
 import { CustomError } from '../lib/errors';
 import { groupBy, isIterable } from '../lib/iterables';
-import type { GeoPoint } from '../lib/geo';
-import { isGeoJsonPoint, isWKTPoint, makeGeoPointFromGeoJSON, makeGeoPointFromWKT } from '../lib/geo';
+import { isGeoJsonPoint, isWKTPoint } from '../lib/geo';
 
 import * as Parsers from '../parsers';
-import { getValue } from '../lib/objects';
-import { DeepKeyOf } from '../lib/types';
-import { extractWords, flatValue } from './utils';
+import { AnalyzerId } from './analyzerService';
 
-export type EdmString = 'Edm.String';
-export type EdmInt32 = 'Edm.Int32';
-export type EdmInt64 = 'Edm.Int64';
-export type EdmDouble = 'Edm.Double';
-export type EdmBoolean = 'Edm.Boolean';
-export type EdmDateTimeOffset = 'Edm.DateTimeOffset';
-export type EdmGeographyPoint = 'Edm.GeographyPoint';
-export type EdmComplexType = 'Edm.ComplexType';
+export const edmString = 'Edm.String' as const;
+export const edmInt32 = 'Edm.Int32' as const;
+export const edmInt64 = 'Edm.Int64' as const;
+export const edmDouble = 'Edm.Double' as const;
+export const edmBoolean = 'Edm.Boolean' as const;
+export const edmDateTimeOffset = 'Edm.DateTimeOffset' as const;
+export const edmGeographyPoint = 'Edm.GeographyPoint' as const;
+export const edmComplexType = 'Edm.ComplexType' as const;
+
+export type EdmString = typeof edmString;
+export type EdmInt32 = typeof edmInt32;
+export type EdmInt64 = typeof edmInt64;
+export type EdmDouble = typeof edmDouble;
+export type EdmBoolean = typeof edmBoolean;
+export type EdmDateTimeOffset = typeof edmDateTimeOffset;
+export type EdmGeographyPoint = typeof edmGeographyPoint;
+export type EdmComplexType = typeof edmComplexType;
 
 export type EdmCollection<EdmT extends string> = `Collection(${EdmT})`;
+export const edmCollection = <TEdm extends string>(edm: TEdm) => `Collection(${edm})` as EdmCollection<TEdm>;
 
-export type KeyFieldDefinition = {
+export interface KeyFieldDefinition {
   name: string;
   type: EdmString;
   key: true;
@@ -29,8 +36,12 @@ export type KeyFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: true;
-};
-export type StringFieldDefinition = {
+  analyzer?: AnalyzerId,
+  searchAnalyzer?: AnalyzerId;
+  indexAnalyzer?: AnalyzerId;
+}
+
+export interface StringFieldDefinition {
   name: string;
   type: EdmString;
   key?: false;
@@ -39,8 +50,12 @@ export type StringFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type Int32FieldDefinition = {
+  analyzer?: AnalyzerId,
+  searchAnalyzer?: AnalyzerId;
+  indexAnalyzer?: AnalyzerId;
+}
+
+export interface Int32FieldDefinition {
   name: string;
   type: EdmInt32;
   key?: false;
@@ -49,8 +64,9 @@ export type Int32FieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type Int64FieldDefinition = {
+}
+
+export interface Int64FieldDefinition {
   name: string;
   type: EdmInt64;
   key?: false;
@@ -59,8 +75,9 @@ export type Int64FieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type DoubleFieldDefinition = {
+}
+
+export interface DoubleFieldDefinition {
   name: string;
   type: EdmDouble;
   key?: false;
@@ -69,8 +86,9 @@ export type DoubleFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type BooleanFieldDefinition = {
+}
+
+export interface BooleanFieldDefinition {
   name: string;
   type: EdmBoolean;
   key?: false;
@@ -79,8 +97,9 @@ export type BooleanFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type DateTimeOffsetFieldDefinition = {
+}
+
+export interface DateTimeOffsetFieldDefinition {
   name: string;
   type: EdmDateTimeOffset;
   key?: false;
@@ -89,8 +108,9 @@ export type DateTimeOffsetFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type GeographyPointFieldDefinition = {
+}
+
+export interface GeographyPointFieldDefinition {
   name: string;
   type: EdmGeographyPoint;
   key?: false;
@@ -99,13 +119,15 @@ export type GeographyPointFieldDefinition = {
   sortable?: boolean;
   facetable?: false;
   retrievable?: boolean;
-};
-export type ComplexTypeFieldDefinition = {
+}
+
+export interface ComplexTypeFieldDefinition {
   name: string;
-  type:  EdmComplexType;
+  type: EdmComplexType;
   fields: BasicFieldDefinition[];
-};
-export type StringCollectionFieldDefinition = {
+}
+
+export interface StringCollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmString>;
   key?: false;
@@ -114,9 +136,12 @@ export type StringCollectionFieldDefinition = {
   sortable?: boolean;
   facetable?: false;
   retrievable?: boolean;
-};
+  analyzer?: AnalyzerId,
+  searchAnalyzer?: AnalyzerId;
+  indexAnalyzer?: AnalyzerId;
+}
 
-export type Int32CollectionFieldDefinition = {
+export interface Int32CollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmInt32>;
   key?: false;
@@ -125,8 +150,9 @@ export type Int32CollectionFieldDefinition = {
   sortable?: false;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type Int64CollectionFieldDefinition = {
+}
+
+export interface Int64CollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmInt64>;
   key?: false;
@@ -135,8 +161,9 @@ export type Int64CollectionFieldDefinition = {
   sortable?: false;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type DoubleCollectionFieldDefinition = {
+}
+
+export interface DoubleCollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmDouble>;
   key?: false;
@@ -145,8 +172,9 @@ export type DoubleCollectionFieldDefinition = {
   sortable?: false;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type BooleanCollectionFieldDefinition = {
+}
+
+export interface BooleanCollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmBoolean>;
   key?: false;
@@ -155,8 +183,9 @@ export type BooleanCollectionFieldDefinition = {
   sortable?: false;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type DateTimeOffsetCollectionFieldDefinition = {
+}
+
+export interface DateTimeOffsetCollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmDateTimeOffset>;
   key?: false;
@@ -165,8 +194,9 @@ export type DateTimeOffsetCollectionFieldDefinition = {
   sortable?: false;
   facetable?: boolean;
   retrievable?: boolean;
-};
-export type GeographyPointCollectionFieldDefinition = {
+}
+
+export interface GeographyPointCollectionFieldDefinition {
   name: string;
   type: EdmCollection<EdmGeographyPoint>;
   key?: false;
@@ -175,17 +205,18 @@ export type GeographyPointCollectionFieldDefinition = {
   sortable?: false;
   facetable?: false;
   retrievable?: boolean;
-};
-export type ComplexTypeCollectionFieldDefinition = {
+}
+
+export interface ComplexTypeCollectionFieldDefinition {
   name: string;
-  type:  EdmCollection<EdmComplexType>;
+  type: EdmCollection<EdmComplexType>;
   searchable?: false;
   filterable?: boolean;
   sortable?: false;
   facetable?: boolean;
   retrievable?: boolean;
   fields: BasicFieldDefinition[];
-};
+}
 
 export type BasicFieldDefinition =
   StringFieldDefinition |
@@ -206,10 +237,71 @@ export type BasicFieldDefinition =
   ComplexTypeCollectionFieldDefinition;
 
 export type FieldDefinition = KeyFieldDefinition | BasicFieldDefinition;
-
 export type Schema = FieldDefinition[];
-export type FlatSchemaEntry<T extends object> = [DeepKeyOf<T>, string[], FieldDefinition];
-export type FlatSchema<T extends object> = FlatSchemaEntry<T>[];
+
+export type AllStringField = KeyFieldDefinition | StringFieldDefinition | StringCollectionFieldDefinition;
+export type AllComplexField = ComplexTypeFieldDefinition | ComplexTypeCollectionFieldDefinition;
+
+export type RetrievableField = Exclude<FieldDefinition, AllComplexField>;
+export type SearchableField = AllStringField;
+export type FilterableField = Exclude<FieldDefinition, AllComplexField>;
+export type SortableField = KeyFieldDefinition | StringFieldDefinition | Int32FieldDefinition | Int64FieldDefinition | DoubleFieldDefinition | BooleanFieldDefinition | DateTimeOffsetFieldDefinition | GeographyPointFieldDefinition;
+export type FacetableField = Exclude<FieldDefinition, AllComplexField | GeographyPointFieldDefinition | GeographyPointCollectionFieldDefinition>;
+export type SuggestableField = SearchableField;
+
+const allStringTypes:         string[] = [edmString, edmCollection(edmString)];
+const allComplexTypes:        string[] = [edmComplexType, edmCollection(edmComplexType)];
+
+const notRetrievableTypes: string[] = [...allComplexTypes];
+const searchableTypes:     string[] = [...allStringTypes];
+const notFilterableTypes:  string[] = [...allComplexTypes];
+const sortableTypes:       string[] = [edmString, edmInt32, edmInt64, edmDouble, edmBoolean, edmDateTimeOffset, edmGeographyPoint];
+const notFacetableTypes:   string[] = [...allComplexTypes, edmGeographyPoint, edmCollection(edmGeographyPoint)];
+
+const hasRetrievable = (field: FieldDefinition): field is RetrievableField => !notRetrievableTypes.includes(field.type);
+const hasSearchable  = (field: FieldDefinition): field is SearchableField  => searchableTypes.includes(field.type);
+const hasFilterable  = (field: FieldDefinition): field is FilterableField  => !notFilterableTypes.includes(field.type);
+const hasSortable    = (field: FieldDefinition): field is SortableField    => sortableTypes.includes(field.type);
+const hasFacetable   = (field: FieldDefinition): field is FacetableField   => !notFacetableTypes.includes(field.type);
+
+type FlatFieldDefinition = { name: string; path: string[], field: FieldDefinition };
+
+export type Retrievable = { name: string, path: string[], field: RetrievableField | AllComplexField };
+export type Searchable  = { name: string, path: string[], field: SearchableField };
+export type Filterable  = { name: string, path: string[], field: FilterableField };
+export type Sortable    = { name: string, path: string[], field: SortableField };
+export type Facetable   = { name: string, path: string[], field: FacetableField };
+export type Suggestable = { name: string, path: string[], field: SuggestableField };
+
+export type AnalyzableBasic     = { name: string, path: string[], field: SearchableField | FilterableField, isFullText: false };
+export type AnalyzableFullText  = { name: string, path: string[], field: SearchableField, isFullText: true };
+export type Analyzable  = AnalyzableBasic | AnalyzableFullText;
+
+function asMatchRequirement<TFlat extends FlatFieldDefinition>(
+  flat: FlatFieldDefinition,
+  reqFn: (field: FieldDefinition) =>  boolean
+) {
+  if (reqFn(flat.field)) {
+    return flat as TFlat;
+  }
+  return null;
+}
+
+const asRetrievable = (field: FlatFieldDefinition) => asMatchRequirement<Retrievable>(field, f => hasRetrievable(f) && (f.retrievable ?? true) || allComplexTypes.includes(f.type));
+const asSearchable  = (field: FlatFieldDefinition) => asMatchRequirement<Searchable>(field, f => hasSearchable(f) && (f.searchable ?? true));
+const asFilterable  = (field: FlatFieldDefinition) => asMatchRequirement<Filterable>(field, f => hasFilterable(f) && (f.filterable ?? true));
+const asSortable    = (field: FlatFieldDefinition) => asMatchRequirement<Sortable>(field, f => hasSortable(f) && (f.sortable ?? true));
+const asFacetable   = (field: FlatFieldDefinition) => asMatchRequirement<Facetable>(field, f => hasFacetable(f) && (f.facetable ?? true));
+const asSuggestable = (field: FlatFieldDefinition): Suggestable | null => searchableTypes.includes(field.field.type) ? field as Suggestable : null;
+const asAnalyzable  = (field: FlatFieldDefinition): Analyzable  | null => {
+  const isSsearchable = hasSearchable(field.field) && field.field.searchable !== false;
+  const isFilterable = hasFilterable(field.field) && field.field.filterable !== false;
+  const isGeo = field.field.type === edmGeographyPoint || field.field.type === edmCollection(edmGeographyPoint);
+
+  return isSsearchable || isFilterable || isGeo
+    ? { ...field, isFullText: isSsearchable } as Analyzable
+    : null;
+};
 
 export function isKeyFieldDefinition(field: FieldDefinition): field is KeyFieldDefinition {
   return field.type === 'Edm.String' && field.key === true;
@@ -315,255 +407,130 @@ function validateComplexProp(fields: FieldDefinition[], value: Record<string, un
   return invalidProps;
 }
 
-function createAssertSchema<T>(keyField: KeyFieldDefinition, fields: FieldDefinition[]): (document: Record<string, unknown>) => T {
-  return (document) => {
-    const key = document[keyField.name]
-    if (!isKeyString(key)) {
-      throw new SchemaError('Schema assertion failed. Key not found in document.');
+function assertSchema<T>(keyField: KeyFieldDefinition, fields: FieldDefinition[], document: Record<string, unknown>): T {
+  const key = document[keyField.name]
+  if (!isKeyString(key)) {
+    throw new SchemaError('Schema assertion failed. Key not found in document.');
+  }
+
+  try {
+    validateComplexProp(fields, document);
+  } catch (e: unknown) {
+    if (e instanceof SchemaError) {
+      throw new SchemaError(`Schema assertion failed. Document ${key} ${e.message}`, e.json);
     }
 
-    try {
-      validateComplexProp(fields, document);
-    } catch (e: unknown) {
-      if (e instanceof SchemaError) {
-        throw new SchemaError(`Schema assertion failed. Document ${key} ${e.message}`, e.json);
-      }
-
-      throw e;
-    }
-
-    return document as T;
-  };
-}
-
-const rawTypes = ['Edm.ComplexType', 'Collection(Edm.ComplexType)'];
-export interface ParsedValueRaw {
-  type: EdmComplexType | EdmCollection<EdmComplexType>;
-  kind: 'raw';
-  values: unknown[];
-}
-const textTypes = ['Edm.String', 'Collection(Edm.String)'];
-export interface ParsedValueText {
-  type: EdmString | EdmCollection<EdmString>;
-  kind: 'text';
-  values: unknown[];
-  normalized: string[];
-  words: string[][];
-}
-const geoTypes = ['Edm.GeographyPoint', 'Collection(Edm.GeographyPoint)'];
-export interface ParsedValueGeo {
-  type: EdmGeographyPoint | EdmCollection<EdmGeographyPoint>;
-  kind: 'geo';
-  values: unknown[];
-  points: GeoPoint[];
-}
-
-export interface ParsedValueGeneric {
-  type: Exclude<FieldDefinition['type'], ParsedValueRaw['type'] | ParsedValueText['type'] | ParsedValueGeo['type']>;
-  kind: 'generic';
-  values: unknown[];
-  normalized: string[];
-}
-
-export type ParsedValue = ParsedValueRaw | ParsedValueText | ParsedValueGeo | ParsedValueGeneric;
-export type ParsedDocument<T extends object> = Partial<Record<DeepKeyOf<T>, ParsedValue>>;
-
-function toParsedValueKind(type: FieldDefinition['type']): 'raw' | 'text' | 'geo' | 'generic' {
-  if (rawTypes.includes(type)) {
-    return 'raw';
-  }
-  if (textTypes.includes(type)) {
-    return 'text';
-  }
-  if (geoTypes.includes(type)) {
-    return 'geo';
-  }
-  return 'generic';
-}
-
-function toPoint(value: unknown): GeoPoint | null {
-  return isGeoJsonPoint(value)
-    ? makeGeoPointFromGeoJSON(value)
-    : isWKTPoint(value as string)
-      ? makeGeoPointFromWKT(value as string)
-      : null;
-}
-
-function createParseDocument<T extends object>(schema: FlatSchema<T>): (document: T) => ParsedDocument<T> {
-  const getNormalized = (target: ParsedValueText) =>
-    target.kind === 'text' || target.kind === 'generic'
-      ? target.values.map(v => `${v}`)
-      : undefined;
-  const getWords = (normalized: string[] | undefined) => (target: ParsedValueText) =>
-    target.kind === 'text'
-      ? normalized?.map(s => extractWords(s))
-      : undefined;
-  const getPoints = (target: ParsedValueGeo) =>
-    target.kind === 'geo'
-      ? target.values.map(toPoint).filter((p): p is GeoPoint => !!p)
-      : undefined;
-
-  function getOrDefault<T extends object, K extends keyof T, V extends T[K]>(target: T, key: K, fn: (target: T) => V | undefined) {
-    if (key in target) {
-      return target[key];
-    }
-    const value = fn(target);
-    target[key] = value as V; //< force writing undefined so that we do not recreate the value everytime.
-    return value;
+    throw e;
   }
 
-  function createParsedValueProxy(type: FieldDefinition['type'], values: unknown[]) {
-    return new Proxy<ParsedValue>({ type, kind: toParsedValueKind(type), values } as ParsedValue, {
-      get(target: ParsedValue, p: string | symbol, receiver: ParsedValue): any {
-        switch (p) {
-          case 'type': return target.type;
-          case 'kind': return target.kind;
-          case 'values': return target.values;
-          case 'normalized': return getOrDefault(target as ParsedValueText, 'normalized', getNormalized);
-          case 'words': return getOrDefault(target as ParsedValueText, 'words', getWords((receiver as ParsedValueText).normalized));
-          case 'points': return getOrDefault(target as ParsedValueGeo, 'points', getPoints);
-          default: return undefined;
-        }
-      }
-    });
-  }
-
-  return (document: T) => {
-    const flat = schema
-      .map(([name, path, field]) => {
-        const value = getValue(document, path);
-        return ({ name, field, values: flatValue(value) });
-      })
-      .filter(({ values })=> !!values?.find(v => !!v))
-      .map(({ name, field, values }) => [name, createParsedValueProxy(field.type, values)]);
-
-    return Object.fromEntries(flat);
-  };
+  return document as T;
 }
 
-function *flattenSchema<T extends object>(schema: FieldDefinition[]): Iterable<FlatSchemaEntry<T>> {
+function *flattenSchema(schema: FieldDefinition[]): Iterable<FlatFieldDefinition> {
   for (const field of schema) {
-    yield [field.name as DeepKeyOf<T>, [field.name], field];
+    yield {
+      name: field.name,
+      path: [field.name],
+      field,
+    };
 
     if (field.type === 'Edm.ComplexType' || field.type === 'Collection(Edm.ComplexType)') {
       const subFields = flattenSchema(field.fields);
 
-      for (const [subName, subPath, subField] of subFields) {
-        yield [`${field.name}/${subName}`, [field.name, ...subPath], subField];
+      for (const sub of subFields) {
+        yield {
+          name: `${field.name}/${sub.name}`,
+          path: [field.name, ...sub.path],
+          field: sub.field,
+        };
       }
     }
   }
 }
 
-export function validateSchema<T extends object>(schema: Schema) {
+// TODO: Shouldn't be exported
+export function validateSchema(schema: Schema) {
   const keyField = schema.find(isKeyFieldDefinition);
   if (!keyField) {
     throw new SchemaError('Invalid schema. Missing KeyFieldDefinition.')
   }
 
-  const flatSchema: FlatSchema<T> = Array.from(flattenSchema(schema));
-  const duplicateFields = groupBy(flatSchema, ([p]) => p)
+  const flatSchema = Array.from(flattenSchema(schema));
+  const duplicateFields = groupBy(flatSchema, (e) => e.name)
     .filter(g => g.results.length > 1);
 
   if (duplicateFields.length) {
     throw new SchemaError('Invalid schema. Duplicated fields', duplicateFields);
   }
 
-  const assertSchema = createAssertSchema<T>(keyField, schema);
-  const parseDocument = createParseDocument<T>(flatSchema);
+  const explode = <T>(mapper: (f: FlatFieldDefinition) => T | null) => flatSchema
+    .map(mapper)
+    .filter((f): f is T => !!f);
 
   return {
     keyField,
-    flatSchema,
-    assertSchema,
-    parseDocument,
-  };
-}
-
-export type SchemaMatcherRequirements = 'searchable' | 'filterable' | 'sortable' | 'facetable' | 'retrievable';
-
-const searchableTypes: FieldDefinition['type'][] = ['Edm.String', 'Collection(Edm.String)'];
-const notFilterableTypes: FieldDefinition['type'][] = ['Edm.ComplexType', 'Collection(Edm.ComplexType)'];
-const sortableTypes: FieldDefinition['type'][] = ['Edm.String', 'Edm.Int32', 'Edm.Int64', 'Edm.Double', 'Edm.Boolean', 'Edm.DateTimeOffset', 'Edm.GeographyPoint'];
-const notFacetableTypes: FieldDefinition['type'][] = ['Edm.ComplexType', 'Collection(Edm.ComplexType)', 'Edm.GeographyPoint', 'Collection(Edm.GeographyPoint)'];
-
-function matchRequirementFieldType(field: FieldDefinition, require: SchemaMatcherRequirements) {
-  switch (require) {
-    case 'searchable':
-      return searchableTypes.includes(field.type);
-    case 'filterable':
-      return !notFilterableTypes.includes(field.type);
-    case 'sortable':
-      return sortableTypes.includes(field.type);
-    case 'facetable':
-      return !notFacetableTypes.includes(field.type);
-    case 'retrievable':
-      return true;
+    retrievableSchema: explode(asRetrievable),
+    searchableSchema: explode(asSearchable),
+    filterableSchema: explode(asFilterable),
+    sortableSchema: explode(asSortable),
+    facetableSchema: explode(asFacetable),
+    suggestableSchema: explode(asSuggestable),
+    analyzableSchema: explode(asAnalyzable),
   }
-}
-
-function matchFieldRequirement(field: FieldDefinition, require: SchemaMatcherRequirements, fieldPath: string): string | null {
-  if (!matchRequirementFieldType(field, require)) {
-    return `Field '${fieldPath}'s type prevent it from being ${require}.`;
-  }
-
-  if ((field as any)[require] === false) {
-    return `Field '${fieldPath}' is not ${require} in schema.`;
-  }
-
-  return null;
-}
-
-export function matchSchemaRequirement<T extends object>(schema: FlatSchema<T>, fieldPath: string, require: SchemaMatcherRequirements): string | null {
-  const definition = schema.find(([p]) => fieldPath === p);
-  return definition
-    ? matchFieldRequirement(definition[2], require, fieldPath)
-    : `Field '${fieldPath}' not found in schema.`;
 }
 
 export class SchemaService<T extends object> {
   public static createSchemaService<T extends object>(schema: Schema) {
-    const { keyField, flatSchema, assertSchema, parseDocument } = validateSchema<T>(schema);
-    
+    const {
+      keyField,
+      retrievableSchema,
+      searchableSchema,
+      filterableSchema,
+      sortableSchema,
+      facetableSchema,
+      suggestableSchema,
+      analyzableSchema,
+    } = validateSchema(schema);
+
     return new SchemaService(
       keyField,
-      flatSchema,
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'searchable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'filterable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'sortable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'facetable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'retrievable', n) == null),
-      assertSchema,
-      parseDocument,
+      retrievableSchema,
+      searchableSchema,
+      filterableSchema,
+      sortableSchema,
+      facetableSchema,
+      suggestableSchema,
+      analyzableSchema,
+      (document: Record<string, unknown>) => assertSchema<T>(keyField, schema, document),
     );
   }
-  
+
   constructor(
     public readonly keyField: KeyFieldDefinition,
-    public readonly fullSchema: FlatSchema<T>,
-    public readonly searchableSchema: FlatSchema<T>,
-    public readonly filtrableSchema: FlatSchema<T>,
-    public readonly sortableSchema: FlatSchema<T>,
-    public readonly facetableSchema: FlatSchema<T>,
-    public readonly retrievableSchema: FlatSchema<T>,
-    public readonly assertSchema: (document: Record<string, unknown>) => T,
-    public readonly parseDocument: (document: T) => ParsedDocument<T>,
+    public readonly retrievableSchema: Retrievable[],
+    public readonly searchableSchema: Searchable[],
+    public readonly filtrableSchema: Filterable[],
+    public readonly sortableSchema: Sortable[],
+    public readonly facetableSchema: Facetable[],
+    public readonly suggestableSchema: Suggestable[],
+    public readonly analyzableSchema: Analyzable[],
+    public readonly assertDocumentSchema: (document: Record<string, unknown>) => T,
   ) {
   }
 
   public assertCommands(request: {
-    filterCommand?: Parsers.FilterParserResult,
-    orderByCommand?: Parsers.OrderByParserResult,
     selectCommand?: Parsers.SelectParserResult,
     searchFieldsCommand?: Parsers.SelectParserResult,
+    filterCommand?: Parsers.FilterParserResult,
+    orderByCommand?: Parsers.OrderByParserResult,
     highlightCommand?: Parsers.HighlighParserResult,
     facetCommands?: Parsers.FacetParserResult[],
   }): void {
     const requirementFailures: string[] = [
-      ...(request.filterCommand?.canApply(this.filtrableSchema) ?? []),
-      ...(request.orderByCommand?.canApply(this.sortableSchema) ?? []),
       ...(request.selectCommand?.canApply(this.retrievableSchema) ?? []),
       ...(request.searchFieldsCommand?.canApply(this.searchableSchema) ?? []),
+      ...(request.filterCommand?.canApply(this.filtrableSchema) ?? []),
+      ...(request.orderByCommand?.canApply(this.sortableSchema) ?? []),
       ...(request.highlightCommand?.canApply(this.searchableSchema) ?? []),
       ...((request.facetCommands ?? []).flatMap(f => f.canApply(this.facetableSchema))),
     ];

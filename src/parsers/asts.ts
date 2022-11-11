@@ -1,4 +1,4 @@
-import { FlatSchema } from '../services';
+import { Facetable } from '../services';
 
 export type AstIdentifier = { type: 'IDENTIFIER', value: string };
 export type AstFieldPath = { type: 'FIELD_PATH', value: string[] };
@@ -15,22 +15,26 @@ export type AstStringLiteral = { type: 'STRING', value: string };
 export type AstDateTimeOffsetLiteral = { type: 'DATETIMEOFFSET', value: Date };
 export type AstIntegerLiteral = { type: 'INTEGER', value: number };
 export type AstFloatLiteral = { type: 'FLOAT', value: number };
-export type AstNotANumberLiteral = { type: 'NOT_A_NUMBER' };
-export type AstNegativeInfinityLiteral = { type: 'NEGATIVE_INFINITY' };
-export type AstPositiveInfinityLiteral = { type: 'POSITIVE_INFINITY' };
+export type AstNotANumberLiteral = { type: 'NOT_A_NUMBER', value: number };
+export type AstNegativeInfinityLiteral = { type: 'NEGATIVE_INFINITY', value: number };
+export type AstPositiveInfinityLiteral = { type: 'POSITIVE_INFINITY', value: number };
 export type AstBooleanLiteral = { type: 'BOOLEAN', value: boolean };
-export type AstNullLiteral = { type: 'NULL' };
+export type AstNullLiteral = { type: 'NULL', value: null };
+export type AstGeoPointLiteral = { type: 'GEO_POINT', lon: number, lat: number };
+export type AstGeoPolygonLiteral = { type: 'GEO_POLYGON', points: { lon: number, lat: number }[] };
+export type AstFnGeoDistance = { type: 'FN_GEO_DISTANCE', from: AstIdentifier |AstGeoPointLiteral, to: AstIdentifier |AstGeoPointLiteral };
+export type AstFnGeoIntersects = { type: 'FN_GEO_INTERSECTS', point: AstIdentifier, polygon: AstGeoPolygonLiteral };
 export type AstFnSearchIn =
-  { type: 'FN_SEARCH_IN', variable: FilterAst, valueList: string } |
-  { type: 'FN_SEARCH_IN', variable: FilterAst, valueList: string, delimiters: string };
+  { type: 'FN_SEARCH_IN', variable: FilterAst, valueList: AstStringLiteral } |
+  { type: 'FN_SEARCH_IN', variable: FilterAst, valueList: AstStringLiteral, delimiter: AstStringLiteral };
 export type AstFnSearchIsMatch =
-  { type: 'FN_SEARCH_ISMATCH', search: string } |
-  { type: 'FN_SEARCH_ISMATCH', search: string, searchFields: string } |
-  { type: 'FN_SEARCH_ISMATCH', search: string, searchFields: string, queryType: 'full' | 'simple', searchMode: 'any' | 'all' };
+  { type: 'FN_SEARCH_ISMATCH', search: AstStringLiteral } |
+  { type: 'FN_SEARCH_ISMATCH', search: AstStringLiteral, searchFields: AstStringLiteral } |
+  { type: 'FN_SEARCH_ISMATCH', search: AstStringLiteral, searchFields: AstStringLiteral, queryType: 'full' | 'simple', searchMode: 'any' | 'all' };
 export type AstFnSearchIsMatchScoring =
-  { type: 'FN_SEARCH_ISMATCHSCORING', search: string } |
-  { type: 'FN_SEARCH_ISMATCHSCORING', search: string, searchFields: string } |
-  { type: 'FN_SEARCH_ISMATCHSCORING', search: string, searchFields: string, queryType: 'full' | 'simple', searchMode: 'any' | 'all' };
+  { type: 'FN_SEARCH_ISMATCHSCORING', search: AstStringLiteral } |
+  { type: 'FN_SEARCH_ISMATCHSCORING', search: AstStringLiteral, searchFields: AstStringLiteral } |
+  { type: 'FN_SEARCH_ISMATCHSCORING', search: AstStringLiteral, searchFields: AstStringLiteral, queryType: 'full' | 'simple', searchMode: 'any' | 'all' };
 
 export type FilterAst =
   AstIdentifier |
@@ -52,6 +56,10 @@ export type FilterAst =
   AstPositiveInfinityLiteral |
   AstBooleanLiteral |
   AstNullLiteral |
+  AstGeoPointLiteral |
+  AstGeoPolygonLiteral |
+  AstFnGeoDistance |
+  AstFnGeoIntersects |
   AstFnSearchIn |
   AstFnSearchIsMatch |
   AstFnSearchIsMatchScoring;
@@ -89,7 +97,20 @@ export type FacetParamsAst = {
 export type FacetResult = { params: FacetParamsAst, results: Record<string, number> };
 export type FacetResults = Record<string, FacetResult>;
 export type FacetActions = {
-  canApply: <T extends object>(schema: FlatSchema<T>) => string[],
+  canApply: (schema: Facetable[]) => string[],
   apply: <T extends object>(accumulator: FacetResults, input: T) => FacetResults,
 };
 export type FacetAst = { field: string, params: FacetParamsAst };
+
+export type AstQuote = { type: 'QUOTE', value: string };
+export type AstWord = { type: 'WORD', value: string };
+export type AstPhrase = AstQuote | AstWord;
+
+export type AstPartial = { type: 'PARTIAL', value: AstPhrase };
+export type AstClause = AstPartial | AstPhrase;
+
+export type AstLogicalExpression = { type: 'EXPRESSION', left: AstExpression, op: 'not' | 'and' | 'or', right: AstExpression };
+export type AstExpression = AstLogicalExpression | AstClause;
+
+export type AstEmpty = { type: 'EMPTY' };
+export type SimpleAst = AstExpression | AstEmpty;
