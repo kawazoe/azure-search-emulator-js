@@ -4,7 +4,7 @@ import { _throw } from '../lib/_throw';
 import { addTime, subtractTime } from '../lib/dates';
 import { calculateDistance, makeGeoPoint } from '../lib/geo';
 import { DeepKeyOf } from '../lib/odata';
-import type { ParsedDocument, ParsedValue, ParsedValueGeo, ParsedValueText } from './schema';
+import { ParsedDocument, ParsedValue, ParsedValueGeo, ParsedValueText } from './analyzis';
 
 export interface ScoringFnIdentity<T extends object> {
   fieldName: DeepKeyOf<T>;
@@ -185,11 +185,11 @@ function tagFunctionStrategy(fn: ScoringTagFn): RawScoringStrategy {
   return (params) => {
     const tags = params[fn.tag.tagsParameter] ?? _throw(new Error(`Missing tagsParameter with name of ${fn.tag.tagsParameter} in query`));
 
-    return (value: ParsedValue) => sum((value as ParsedValueText).words.map(words =>
+    return (value: ParsedValue) => sum((value as ParsedValueText).tokens.map(tokens =>
       boost(
-        words.filter(w => tags.includes(w)).length,
+        tokens.filter(w => tags.includes(w)).length,
         0,
-        words.length,
+        tokens.length,
       )));
   };
 }

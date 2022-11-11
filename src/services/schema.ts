@@ -1,13 +1,11 @@
 import { _never } from '../lib/_never';
 import { CustomError } from '../lib/errors';
 import { groupBy, isIterable } from '../lib/iterables';
-import type { GeoPoint } from '../lib/geo';
-import { isGeoJsonPoint, isWKTPoint, makeGeoPointFromGeoJSON, makeGeoPointFromWKT } from '../lib/geo';
+import { isGeoJsonPoint, isWKTPoint} from '../lib/geo';
+import { DeepKeyOf } from '../lib/types';
 
 import * as Parsers from '../parsers';
-import { getValue } from '../lib/objects';
-import { DeepKeyOf } from '../lib/types';
-import { extractWords, flatValue } from './utils';
+import { AnalyzerId, createParseDocument, ParsedDocument } from './analyzis';
 
 export type EdmString = 'Edm.String';
 export type EdmInt32 = 'Edm.Int32';
@@ -29,6 +27,9 @@ export type KeyFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: true;
+  analyzer?: AnalyzerId,
+  searchAnalyzer?: AnalyzerId;
+  indexAnalyzer?: AnalyzerId;
 };
 export type StringFieldDefinition = {
   name: string;
@@ -39,6 +40,9 @@ export type StringFieldDefinition = {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
+  analyzer?: AnalyzerId,
+  searchAnalyzer?: AnalyzerId;
+  indexAnalyzer?: AnalyzerId;
 };
 export type Int32FieldDefinition = {
   name: string;
@@ -114,6 +118,9 @@ export type StringCollectionFieldDefinition = {
   sortable?: boolean;
   facetable?: false;
   retrievable?: boolean;
+  analyzer?: AnalyzerId,
+  searchAnalyzer?: AnalyzerId;
+  indexAnalyzer?: AnalyzerId;
 };
 
 export type Int32CollectionFieldDefinition = {
@@ -208,7 +215,7 @@ export type BasicFieldDefinition =
 export type FieldDefinition = KeyFieldDefinition | BasicFieldDefinition;
 
 export type Schema = FieldDefinition[];
-export type FlatSchemaEntry<T extends object> = [DeepKeyOf<T>, string[], FieldDefinition];
+export type FlatSchemaEntry<T extends object> = { key: DeepKeyOf<T>, path: string[], field: FieldDefinition };
 export type FlatSchema<T extends object> = FlatSchemaEntry<T>[];
 
 export function isKeyFieldDefinition(field: FieldDefinition): field is KeyFieldDefinition {
@@ -336,120 +343,15 @@ function createAssertSchema<T>(keyField: KeyFieldDefinition, fields: FieldDefini
   };
 }
 
-const rawTypes = ['Edm.ComplexType', 'Collection(Edm.ComplexType)'];
-export interface ParsedValueRaw {
-  type: EdmComplexType | EdmCollection<EdmComplexType>;
-  kind: 'raw';
-  values: unknown[];
-}
-const textTypes = ['Edm.String', 'Collection(Edm.String)'];
-export interface ParsedValueText {
-  type: EdmString | EdmCollection<EdmString>;
-  kind: 'text';
-  values: unknown[];
-  normalized: string[];
-  words: string[][];
-}
-const geoTypes = ['Edm.GeographyPoint', 'Collection(Edm.GeographyPoint)'];
-export interface ParsedValueGeo {
-  type: EdmGeographyPoint | EdmCollection<EdmGeographyPoint>;
-  kind: 'geo';
-  values: unknown[];
-  points: GeoPoint[];
-}
-
-export interface ParsedValueGeneric {
-  type: Exclude<FieldDefinition['type'], ParsedValueRaw['type'] | ParsedValueText['type'] | ParsedValueGeo['type']>;
-  kind: 'generic';
-  values: unknown[];
-  normalized: string[];
-}
-
-export type ParsedValue = ParsedValueRaw | ParsedValueText | ParsedValueGeo | ParsedValueGeneric;
-export type ParsedDocument<T extends object> = Partial<Record<DeepKeyOf<T>, ParsedValue>>;
-
-function toParsedValueKind(type: FieldDefinition['type']): 'raw' | 'text' | 'geo' | 'generic' {
-  if (rawTypes.includes(type)) {
-    return 'raw';
-  }
-  if (textTypes.includes(type)) {
-    return 'text';
-  }
-  if (geoTypes.includes(type)) {
-    return 'geo';
-  }
-  return 'generic';
-}
-
-function toPoint(value: unknown): GeoPoint | null {
-  return isGeoJsonPoint(value)
-    ? makeGeoPointFromGeoJSON(value)
-    : isWKTPoint(value as string)
-      ? makeGeoPointFromWKT(value as string)
-      : null;
-}
-
-function createParseDocument<T extends object>(schema: FlatSchema<T>): (document: T) => ParsedDocument<T> {
-  const getNormalized = (target: ParsedValueText) =>
-    target.kind === 'text' || target.kind === 'generic'
-      ? target.values.map(v => `${v}`)
-      : undefined;
-  const getWords = (normalized: string[] | undefined) => (target: ParsedValueText) =>
-    target.kind === 'text'
-      ? normalized?.map(s => extractWords(s))
-      : undefined;
-  const getPoints = (target: ParsedValueGeo) =>
-    target.kind === 'geo'
-      ? target.values.map(toPoint).filter((p): p is GeoPoint => !!p)
-      : undefined;
-
-  function getOrDefault<T extends object, K extends keyof T, V extends T[K]>(target: T, key: K, fn: (target: T) => V | undefined) {
-    if (key in target) {
-      return target[key];
-    }
-    const value = fn(target);
-    target[key] = value as V; //< force writing undefined so that we do not recreate the value everytime.
-    return value;
-  }
-
-  function createParsedValueProxy(type: FieldDefinition['type'], values: unknown[]) {
-    return new Proxy<ParsedValue>({ type, kind: toParsedValueKind(type), values } as ParsedValue, {
-      get(target: ParsedValue, p: string | symbol, receiver: ParsedValue): any {
-        switch (p) {
-          case 'type': return target.type;
-          case 'kind': return target.kind;
-          case 'values': return target.values;
-          case 'normalized': return getOrDefault(target as ParsedValueText, 'normalized', getNormalized);
-          case 'words': return getOrDefault(target as ParsedValueText, 'words', getWords((receiver as ParsedValueText).normalized));
-          case 'points': return getOrDefault(target as ParsedValueGeo, 'points', getPoints);
-          default: return undefined;
-        }
-      }
-    });
-  }
-
-  return (document: T) => {
-    const flat = schema
-      .map(([name, path, field]) => {
-        const value = getValue(document, path);
-        return ({ name, field, values: flatValue(value) });
-      })
-      .filter(({ values })=> !!values?.find(v => !!v))
-      .map(({ name, field, values }) => [name, createParsedValueProxy(field.type, values)]);
-
-    return Object.fromEntries(flat);
-  };
-}
-
 function *flattenSchema<T extends object>(schema: FieldDefinition[]): Iterable<FlatSchemaEntry<T>> {
   for (const field of schema) {
-    yield [field.name as DeepKeyOf<T>, [field.name], field];
+    yield { key: field.name as DeepKeyOf<T>, path: [field.name], field };
 
     if (field.type === 'Edm.ComplexType' || field.type === 'Collection(Edm.ComplexType)') {
       const subFields = flattenSchema(field.fields);
 
-      for (const [subName, subPath, subField] of subFields) {
-        yield [`${field.name}/${subName}`, [field.name, ...subPath], subField];
+      for (const sub of subFields) {
+        yield { key: `${field.name}/${sub.key}`, path: [field.name, ...sub.path], field: sub.field };
       }
     }
   }
@@ -462,7 +364,7 @@ export function validateSchema<T extends object>(schema: Schema) {
   }
 
   const flatSchema: FlatSchema<T> = Array.from(flattenSchema(schema));
-  const duplicateFields = groupBy(flatSchema, ([p]) => p)
+  const duplicateFields = groupBy(flatSchema, (e) => e.key)
     .filter(g => g.results.length > 1);
 
   if (duplicateFields.length) {
@@ -514,11 +416,11 @@ function matchFieldRequirement(field: FieldDefinition, require: SchemaMatcherReq
   return null;
 }
 
-export function matchSchemaRequirement<T extends object>(schema: FlatSchema<T>, fieldPath: string, require: SchemaMatcherRequirements): string | null {
-  const definition = schema.find(([p]) => fieldPath === p);
-  return definition
-    ? matchFieldRequirement(definition[2], require, fieldPath)
-    : `Field '${fieldPath}' not found in schema.`;
+export function matchSchemaRequirement<T extends object>(schema: FlatSchema<T>, key: string, require: SchemaMatcherRequirements): string | null {
+  const entry = schema.find((e) => key === e.key);
+  return entry
+    ? matchFieldRequirement(entry.field, require, key)
+    : `Field '${key}' not found in schema.`;
 }
 
 export class SchemaService<T extends object> {
@@ -528,11 +430,11 @@ export class SchemaService<T extends object> {
     return new SchemaService(
       keyField,
       flatSchema,
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'searchable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'filterable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'sortable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'facetable', n) == null),
-      flatSchema.filter(([n,, f]) => matchFieldRequirement(f, 'retrievable', n) == null),
+      flatSchema.filter(({ key, field }) => matchFieldRequirement(field, 'searchable', key) == null),
+      flatSchema.filter(({ key, field }) => matchFieldRequirement(field, 'filterable', key) == null),
+      flatSchema.filter(({ key, field }) => matchFieldRequirement(field, 'sortable', key) == null),
+      flatSchema.filter(({ key, field }) => matchFieldRequirement(field, 'facetable', key) == null),
+      flatSchema.filter(({ key, field }) => matchFieldRequirement(field, 'retrievable', key) == null),
       assertSchema,
       parseDocument,
     );

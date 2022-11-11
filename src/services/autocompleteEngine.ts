@@ -1,17 +1,17 @@
 import type { Suggester } from './suggestEngine';
-import type { AutocompleteModes, AutocompleteResult } from './searchBackend';
-import {
-  SearchBackend,
-  useCoverage,
-  useFilterScoring,
-  useLimiterMiddleware,
-  useOrderBy,
-  useSearchScoring,
-  useAutocompleteResult,
-  createAutocompleteSuggestionStrategy,
-  useStripScore, useScoringProfiles
-} from './searchBackend';
+import type { AutocompleteResult } from './searchBackend';
+import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
+
+import { useFilterScoring } from './middlewares/reducer/filterScoring';
+import type { AutocompleteModes } from './middlewares/reducer/searchScoring';
+import { createAutocompleteSuggestionStrategy, useSearchScoring } from './middlewares/reducer/searchScoring';
+import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
+import { useAutocompleteResult } from './middlewares/reducer/autocompleteResult';
+import { useOrderBy } from './middlewares/transformer/orderBy';
+import { useCoverage } from './middlewares/transformer/coverage';
+import { useLimiterMiddleware } from './middlewares/transformer/limiter';
+import { useStripScore } from './middlewares/transformer/stripScore';
 
 export interface AutoCompleteRequest {
   autocompleteMode?: AutocompleteModes;

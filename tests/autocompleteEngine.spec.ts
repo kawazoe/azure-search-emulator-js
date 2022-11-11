@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { People } from './lib/mockSchema';
-import { peopleSchemaService, peopleSuggesterProvider, peopleToStoredDocument } from './lib/mockSchema';
+import {
+  peopleSchemaService,
+  peopleSuggesterProvider,
+  peopleToStoredDocument
+} from './lib/mockSchema';
 
 import { AutocompleteEngine, SearchBackend } from '../src';
 
@@ -89,8 +93,8 @@ describe('AutocompleteEngine', () => {
       const results = sut.autocomplete({ suggesterName: 'sg', search: '(very|a) long', autocompleteMode: 'twoTerms' });
 
       expect(results.value).toEqual([
-        { text: 'long \t name', queryPlusText: 'very long \t name' },
-        { text: 'longer   fullname', queryPlusText: 'a longer   fullname' },
+        { text: 'long name', queryPlusText: 'very long name' },
+        { text: 'longer fullname', queryPlusText: 'a longer fullname' },
       ]);
     });
 

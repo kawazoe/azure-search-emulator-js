@@ -35,17 +35,17 @@ export type People = {
 export const peopleSchemaKey: KeyFieldDefinition = { type: 'Edm.String', key: true, name: 'id' };
 export const peopleSchema: Schema = [
   peopleSchemaKey,
-  { type: 'Edm.String', name: 'fullName' },
+  { type: 'Edm.String', name: 'fullName', analyzer: 'simple' },
   { type: 'Collection(Edm.ComplexType)', name: 'addresses', fields: [
-      { type: 'Edm.String', name: 'parts' },
-      { type: 'Edm.String', name: 'kind' },
+      { type: 'Edm.String', name: 'parts', analyzer: 'simple' },
+      { type: 'Edm.String', name: 'kind', analyzer: 'keyword' },
       { type: 'Edm.GeographyPoint', name: 'location' },
     ]},
-  { type: 'Collection(Edm.String)', name: 'phones' },
+  { type: 'Collection(Edm.String)', name: 'phones', analyzer: 'keyword' },
   { type: 'Edm.Double', name: 'ratio' },
   { type: 'Edm.Int64', name: 'income' },
   { type: 'Edm.ComplexType', name: 'metadata', fields: [
-      { type: 'Edm.String', name: 'createdBy' },
+      { type: 'Edm.String', name: 'createdBy', analyzer: 'simple' },
       { type: 'Edm.DateTimeOffset', name: 'createdOn' },
       { type: 'Edm.Int32', name: 'editCounter' },
       { type: 'Edm.Boolean', name: 'deleted' },
@@ -59,9 +59,9 @@ const peopleSuggesters: Suggester[] = [
     name: 'sg',
     searchMode: 'analyzingInfixMatching',
     fields: peopleSchemaService.fullSchema
-      .filter(([,,f]) => f.type === 'Edm.String' || f.type === 'Collection(Edm.String)')
-      .map(([n]) => n)
-  }
+      .filter(({field}) => field.type === 'Edm.String' || field.type === 'Collection(Edm.String)')
+      .map(e => e.key),
+  },
 ];
 export const peopleSuggesterProvider = (name: string) => peopleSuggesters.find(s => s.name === name) ?? _throw(new Error(`Unknown suggester ${name}`));
 
@@ -79,13 +79,16 @@ export function hydrateParsedProxies<T extends object>(document: ParsedDocument<
 
     if (target.kind === 'text') {
       target.normalized;
-      target.words;
+      target.tokens;
+      target.length;
     }
     if (target.kind === 'geo') {
       target.points;
     }
     if (target.kind === 'generic') {
       target.normalized;
+      target.tokens;
+      target.length;
     }
   }
 }

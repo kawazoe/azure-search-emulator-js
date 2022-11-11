@@ -232,8 +232,6 @@ describe('DataStore', () => {
 
         hydrateParsedProxies(document.parsed);
 
-        console.log(document)
-
         expect(document).toEqual({
           key: 'abc',
           original: expect.anything(),
@@ -243,20 +241,28 @@ describe('DataStore', () => {
               kind: 'text',
               values: ['abc'],
               normalized: ['abc'],
-              words: [['abc']],
+              tokens: [['abc']],
+              length: 3,
+              searchAnalyzer: 'standard',
+              indexAnalyzer: 'standard',
             },
             fullName: {
               type: 'Edm.String',
               kind: 'text',
               values: ["Mister Mac'Lown de Montreal, protector of (de) tests"],
               normalized: ["Mister Mac'Lown de Montreal, protector of (de) tests"],
-              words: [['Mister', "Mac'Lown", 'de', 'Montreal', 'protector', 'of', 'de', 'tests']]
+              tokens: [['mister', 'mac', 'lown', 'de', 'montreal', 'protector', 'of', 'de', 'tests']],
+              length: 41,
+              searchAnalyzer: 'simple',
+              indexAnalyzer: 'simple',
             },
             income: {
               type: 'Edm.Int64',
               kind: 'generic',
               values: [500],
-              normalized: ['500']
+              normalized: ['500'],
+              tokens: [['500']],
+              length: 3,
             },
             addresses: {
               type: 'Collection(Edm.ComplexType)',
@@ -271,7 +277,10 @@ describe('DataStore', () => {
               kind: 'text',
               values: ['home', 'work'],
               normalized: ['home', 'work'],
-              words: [['home'], ['work']],
+              tokens: [['home'], ['work']],
+              length: 8,
+              searchAnalyzer: 'keyword',
+              indexAnalyzer: 'keyword',
             },
             'addresses/location': {
               type: 'Edm.GeographyPoint',

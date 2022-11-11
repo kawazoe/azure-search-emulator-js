@@ -4,7 +4,9 @@ import { createHttp404 } from '../lib/http';
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import { select } from '../parsers';
-import { KeyFieldDefinition, ParsedDocument, SchemaService } from './schema';
+import type { KeyFieldDefinition } from './schema';
+import { SchemaService } from './schema';
+import type { ParsedDocument } from './analyzis';
 
 export interface FindDocumentRequest<T extends object, Keys extends ODataSelect<T>> {
   key: string;

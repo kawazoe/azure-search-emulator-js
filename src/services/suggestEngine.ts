@@ -2,19 +2,18 @@ import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import type { KeyFieldDefinition } from './schema';
 import type { SuggestResult } from './searchBackend';
-import {
-  SearchBackend,
-  useCoverage,
-  useSelect,
-  useFilterScoring,
-  useLimiterMiddleware,
-  useOrderBy,
-  useSearchScoring,
-  createHighlightSuggestionStrategy,
-  useSuggestResult,
-  useStripScore, useScoringProfiles
-} from './searchBackend';
+import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
+
+import { useFilterScoring } from './middlewares/reducer/filterScoring';
+import { createHighlightSuggestionStrategy, useSearchScoring } from './middlewares/reducer/searchScoring';
+import { useSelect } from './middlewares/reducer/select';
+import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
+import { useSuggestResult } from './middlewares/reducer/suggestResult';
+import { useOrderBy } from './middlewares/transformer/orderBy';
+import { useCoverage } from './middlewares/transformer/coverage';
+import { useLimiterMiddleware } from './middlewares/transformer/limiter';
+import { useStripScore } from './middlewares/transformer/stripScore';
 
 export interface SuggestRequest<T extends object, Keys extends ODataSelect<T> | string> {
   filter?: string;          //< OData Filter expression

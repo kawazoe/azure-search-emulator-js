@@ -1,21 +1,20 @@
 import type { ODataSelect, ODataSelectResult } from '../lib/odata';
 
 import type { SearchFacetBase, SearchResult } from './searchBackend';
-import {
-  SearchBackend,
-  useCount,
-  useCoverage,
-  useSearchResult,
-  useSelect,
-  useFacetExtraction,
-  useFacetTransformation,
-  useFilterScoring,
-  useOrderBy,
-  usePagingMiddleware,
-  useSearchScoring,
-  createHighlightSuggestionStrategy, useScoringProfiles
-} from './searchBackend';
+import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
+
+import { useFilterScoring } from './middlewares/reducer/filterScoring';
+import { createHighlightSuggestionStrategy, useSearchScoring } from './middlewares/reducer/searchScoring';
+import { useFacetExtraction } from './middlewares/reducer/facetExtraction';
+import { useSelect } from './middlewares/reducer/select';
+import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
+import { useSearchResult } from './middlewares/reducer/searchResult';
+import { useOrderBy } from './middlewares/transformer/orderBy';
+import { useCount } from './middlewares/transformer/count';
+import { useCoverage } from './middlewares/transformer/coverage';
+import { useFacetTransformation } from './middlewares/transformer/facetTransformation';
+import { usePaging } from './middlewares/transformer/paging';
 
 export interface SearchDocumentsRequest<T extends object, Keys extends ODataSelect<T> | string> {
   count?: boolean;
@@ -86,7 +85,7 @@ export class SearchEngine<T extends object> {
       ...(request.count ? [useCount<T, Keys>()] : []),
       ...(request.minimumCoverage ? [useCoverage<T, Keys>()] : []),
       ...(request.facets ? [useFacetTransformation<T, Keys>()] : []),
-      usePagingMiddleware<T, Keys>({ skip: request.skip ?? 0, top: request.top ?? defaultPageSize, maxPageSize, request })
+      usePaging<T, Keys>({ skip: request.skip ?? 0, top: request.top ?? defaultPageSize, maxPageSize, request })
     ];
 
     return this.backend.search({ documentMiddlewares, resultsMiddlewares }) as SearchDocumentsPageResult<ODataSelectResult<T, Keys>>;

@@ -16,9 +16,3 @@ export function flatValue(value: unknown): unknown[] {
 
   return Array.from(_normalizeValue(value));
 }
-
-// Uses separators instead of \w to better cover extended alphabets.
-const wordsRegex = /[^\s.!?:;,()\[\]{}<>\/\\]+/g;
-export function extractWords(value: string): string[] {
-  return Array.from(value.matchAll(wordsRegex)).flatMap(m => Array.from(m));
-}
