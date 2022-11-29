@@ -158,7 +158,7 @@ peopleIndex.postDocuments({
 
 // Query your index.
 const results = peopleIndex.search({
-  search: '[Bb]ob',
+  search: 'bo*',
   select: ['id'],
   filter: "addresses/kind eq 'work'",
   count: true,
@@ -189,11 +189,33 @@ const results = peopleIndex.search({
 ```
 
 ## What works
-Currently, the emulator supports search, suggest, autocomplete, count, and all data edition operations. You can expect
-full odata query support for all queries that uses them. This means $filter, $select, $orderby, $skip, $top, $count, as
-well as continuation tokens should work as intended. Search scoring, highlights, features, and facets are supported but
-might behave differently from the real service as they depend on full text search statistics. Scoring profiles are also
-fully supported but might yield different results from the actual service.
+Currently, the emulator supports the following [stable API endpoints](https://learn.microsoft.com/en-us/rest/api/searchservice/):
+- Indexes
+  - [Create Index](https://learn.microsoft.com/en-us/rest/api/searchservice/create-index)
+  - [Get Index](https://learn.microsoft.com/en-us/rest/api/searchservice/get-index)
+- Documents
+  - [Add, Update, or Delete Documents](https://learn.microsoft.com/en-us/rest/api/searchservice/addupdate-or-delete-documents)
+  - [Autocomplete](https://learn.microsoft.com/en-us/rest/api/searchservice/autocomplete)
+  - [Count Documents](https://learn.microsoft.com/en-us/rest/api/searchservice/count-documents)
+  - [Lookup Document](https://learn.microsoft.com/en-us/rest/api/searchservice/lookup-document)
+  - [Search Document](https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents)
+  - [Suggestions](https://learn.microsoft.com/en-us/rest/api/searchservice/suggestions)
+
+All [documented OData features](https://learn.microsoft.com/en-us/azure/search/query-odata-filter-orderby-syntax) are supported:
+- [$filter](https://learn.microsoft.com/en-us/azure/search/search-query-odata-filter)
+- [$select](https://learn.microsoft.com/en-us/azure/search/search-query-odata-select)
+- [$orderby](https://learn.microsoft.com/en-us/azure/search/search-query-odata-orderby)
+- $skip
+- $top
+- $count
+- [Continuation Tokens](https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents#request-body)
+ 
+Most advanced search capabilities are supported but might behave differently from the real service as they depend on full
+text search statistics that aren't calculated in the same manner. They are:
+- [Scoring profiles](https://learn.microsoft.com/en-us/azure/search/index-add-scoring-profiles)
+- Highlights
+- Features
+- Facets
 
 The emulator does schema validation through the use of strong typings and runtime validations. It is expected that the
 schema you use to create an index in the emulator should work without any modification when creating a real index in
@@ -201,17 +223,14 @@ Azure.
 
 Keep in mind that this is still an early prototype and is not designed to be used in production.
 
-## What does not work
-The emulator does not use a full text search engine as its backend. Instead, queries are built around regex text
-matching. This means that any query using the Lucene syntax, or features meant to control this syntax (like simple vs
-full query types) is not supported. This also means that suggesters, analysers and skillsets are not supported or
-extremely limited.
+## What does not work, yet
+The emulator does not use a full text search engine as its backend, yet. This means that while it does support the
+Simple Lucene Query Syntax, **it does not support the Full Lucene Query Syntax**.
 
-It does not support synonyms.
-
-It does not support sharding, meaning that index coverage will always be 100%.
-
-It does not support encryption.
+It does not support custom analyzers.  
+It does not support synonyms.  
+It does not support sharding, meaning that index coverage will always be 100%.  
+It does not support encryption.  
 
 Do not expect search results from this emulator to match actual search results. They should make sense, but will not,
 and probably will never be, the same.
@@ -241,31 +260,31 @@ service to spin up on your dev machine when testing, or demoing, your applicatio
 ## What's next
 - Validation against queries made by the official client.
 - Support storing/loading the index to/from disk when running on the server.
-- Switch the backend to a full text search engine with Lucene syntax.
+- Replace the naive search algorithm with a more in-depth analysis to build an actual index.
 - Shard data across multiple workers (multi-threaded queries).
 - Maybe more features?
 
 ## Benchmarks
 ```
 describe SearchEngine
-    bench large query
-    => total: 2234.81ms | samples/runs: 93/100 | ops/sec: 44.75 ±4.72ms @ 3σ
-       mean: 22.35ms | mode: 20ms | min: 18.13ms/18.13ms | max: 27.58ms/45.75ms
+  bench large query (2_500 documents)
+  => total: 2647.13ms | samples/runs: 91/100 | ops/sec: 37.78 ±4.33ms @ 3σ
+     mean: 26.47ms | mode: 26ms | min: 22.21ms/22.21ms | max: 30.86ms/43.1ms
 describe SuggestEngine
-    bench large query
-    => total: 1688.16ms | samples/runs: 93/100 | ops/sec: 59.24 ±1.81ms @ 3σ
-       mean: 16.88ms | mode: 16.4ms | min: 15.13ms/15.13ms | max: 18.74ms/23.54ms
+  bench large query (2_500 documents)
+  => total: 1459.37ms | samples/runs: 96/100 | ops/sec: 68.52 ±2.64ms @ 3σ
+     mean: 14.59ms | mode: 15ms | min: 12.07ms/12.07ms | max: 17.36ms/25.76ms
 describe AutocompleteEngine
-    bench large query
-    => total: 1427.3ms | samples/runs: 94/100 | ops/sec: 70.06 ±1.15ms @ 3σ
-       mean: 14.27ms | mode: 14.3ms | min: 13.05ms/13.05ms | max: 15.35ms/18.99ms
+  bench large query (2_500 documents)
+  => total: 1221.65ms | samples/runs: 41/100 | ops/sec: 81.86 ±0.69ms @ 3σ
+     mean: 12.22ms | mode: 13ms | min: 10.1ms/11.53ms | max: 12.91ms/9.85ms
 ```
 
 ### Hardware
 ```
 Garuda Linux
 Kernel Version: 6.0.6-zen1-1-zen (64-bit)
-Processors: 32 x Intel Xeon CPU E5-2687W v2 @3.4GHz
+Processors: 32 x Intel Xeon CPU E5-2687W v2 @3.4GHz (Single Threaded: @4.0 GHz) (Released in 2013)
 Memory: 64 GB of DDR3-1866 ECC
 ```
 
