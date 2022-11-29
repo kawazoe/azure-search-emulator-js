@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { AnalyzerFn, createSimpleQueryStrategy, tokenize } from '../src';
+import { AnalyzerFn, createSimpleQueryStrategy, createTokenizer } from '../src';
 
 describe('query-simple', () => {
   describe('apply', () => {
-    const simpleAnalyzer: AnalyzerFn = v => tokenize(v, /(\s+)/);
+    const simpleAnalyzer: AnalyzerFn = createTokenizer({ splitter: /(\s+)/ });
     
     function itShouldScore(
       query: string,

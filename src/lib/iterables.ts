@@ -40,14 +40,14 @@ export function groupBy<T, K, R>(source: T[], keySelector: (value: T) => K, resu
 }
 
 export function uniq<T>(source: T[]): T[];
-export function uniq<T, K>(source: T[], keySelector: (value: T) => K): T[];
-export function uniq<T, K>(source: T[], keySelector?: (value: T) => K): T[] {
+export function uniq<T, K, R = T>(source: T[], keySelector: (value: T) => K, valueSelector?: (value: T) => R): R[];
+export function uniq<T, K, R = T>(source: T[], keySelector?: (value: T) => K, valueSelector?: (value: T) => R): (T | R)[] {
   if (!keySelector) {
     return Array.from(new Set(source));
   }
 
   const sentinel = new Set<K | T>();
-  const results: T[] = [];
+  const results: (T | R)[] = [];
 
   for (const value of source) {
     const key = keySelector(value);
@@ -56,7 +56,7 @@ export function uniq<T, K>(source: T[], keySelector?: (value: T) => K): T[] {
     sentinel.add(key);
 
     if (previousSize !== sentinel.size) {
-      results.push(value);
+      results.push(valueSelector ? valueSelector(value) : value);
     }
   }
 

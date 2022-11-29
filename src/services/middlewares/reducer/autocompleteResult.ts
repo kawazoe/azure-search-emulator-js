@@ -7,15 +7,11 @@ export function useAutocompleteResult<T extends object, Keys extends ODataSelect
   return (next) => (acc, cur) => {
     const suggestions = Object.entries(cur.suggestions)
       .sort(sortBy(([key]) => cur.features[key].similarityScore, sortBy.desc))
-      .flatMap(([, suggestions]) => {
-        const results = suggestions
-          .map(result => ({
-            '@search.score': cur.globalScore,
-            ...result as AutocompleteResult,
-          }));
-
-        return uniq(results, r => r.queryPlusText);
-      });
+      .flatMap(([, suggestions]) => uniq(
+        suggestions as AutocompleteResult[],
+        r => r.text,
+        r => ({ '@search.score': cur.globalScore, ...r }),
+      ));
 
     acc.values.push(...suggestions);
 

@@ -1,5 +1,5 @@
 import type { ODataSelect } from '../../../lib/odata';
-import { sum, uniq } from '../../../lib/iterables';
+import { uniq } from '../../../lib/iterables';
 
 import type { Searchable } from '../../schema';
 import { SchemaService } from '../../schema';
@@ -7,17 +7,17 @@ import * as Parsers from '../../../parsers';
 import type { ScoringBases } from '../../scorer';
 import type { DocumentMiddleware, SearchFeatures, SearchSuggestions } from '../../searchBackend';
 import {
-  PlainAnalysisMode,
   AnalyzedValueFullText,
   NGram,
+  PlainAnalysisMode,
+  QueryAnalyzisResult,
   QueryingStrategy,
-  SimpleMatches,
-  QueryAnalyzisResult
+  SimpleMatch,
 } from '../../analyzerService';
 
 export type AnalyzedSearchable = Searchable & QueryAnalyzisResult;
 export type SuggestionStrategy<T extends object> =
-  (schemaService: SchemaService<T>) => (searchable: AnalyzedSearchable, analyzed: AnalyzedValueFullText, matches: SimpleMatches[]) => unknown[];
+  (schemaService: SchemaService<T>) => (searchable: AnalyzedSearchable) => (analyzed: AnalyzedValueFullText, entryMatch: SimpleMatch, fieldIndex: number) => unknown;
 export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(options: {
   searchFields: string,
   queryingStrategy: QueryingStrategy,
@@ -32,10 +32,10 @@ export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(o
       ? schemaService.searchableSchema.filter((e) => searchFieldPaths.includes(e.name))
       : schemaService.searchableSchema;
 
-    const searchables: AnalyzedSearchable[] = searchableFields
-      .map(s => ({ ...s, ...options.queryingStrategy(s.field) }));
-
     const suggestionStrategy = options.suggestionStrategy(schemaService);
+    const searchables = searchableFields
+      .map(s => ({ ...s, ...options.queryingStrategy(s.field) }))
+      .map(s => ({ ...s, suggester: suggestionStrategy(s) }));
 
     return (acc, cur) => {
       let scores: ScoringBases = [];
@@ -49,29 +49,50 @@ export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(o
           continue;
         }
 
-        const matches = analyzed.entries.map(searchable.apply);
-        const flatMatches = matches.flat();
+        const matchedValues: string[] = [];
+        const searchableSuggestions: unknown[] = [];
+        let matchedLength = 0;
+        let matchedScore = 0;
+        let matchCount = 0;
+        for (let i = 0; i < analyzed.entries.length; i++){
+          const entry = analyzed.entries[i];
+          const matches = searchable.apply(entry);
 
-        if (flatMatches.flatMap(m => m.ngrams).length <= 0) {
+          if (matches.length <= 0) {
+            continue;
+          }
+
+          for (const match of matches) {
+            if (match.ngrams.length === 0) {
+              continue;
+            }
+
+            for (const ngram of match.ngrams) {
+              matchedValues.push(ngram.value);
+              matchedLength += ngram.value.length;
+            }
+
+            matchedScore += match.score;
+            matchCount++;
+
+            searchableSuggestions.push(searchable.suggester(analyzed, match, i));
+          }
+        }
+
+        if (matchedValues.length <= 0) {
           continue;
         }
 
         scores.push({
           key: searchable.name,
-          score: sum(flatMatches.map(m => m.score)),
+          score: matchedScore,
         });
 
-        const matchedValues = flatMatches
-          .flatMap(m => m.ngrams)
-          .map(ngram => ngram.value);
-
-        const matchedLength = sum(matchedValues.map(v => v.length));
-
-        suggestions[searchable.name] = suggestionStrategy(searchable, analyzed, matches);
+        suggestions[searchable.name] = searchableSuggestions;
         features[searchable.name] = {
           uniqueTokenMatches: uniq(matchedValues).length,
           similarityScore: analyzed.length === 0 ? 0 : (matchedLength / analyzed.length),
-          termFrequency: flatMatches.length,
+          termFrequency: matchCount,
         };
       }
 
@@ -100,29 +121,23 @@ export function createHighlightSuggestionStrategy<T extends object>(options: {
 
     const highlightPaths = highlightCommand.toPaths();
 
-    return (searchable, analyzable, matches) => {
+    return (searchable) => {
       if (!highlightPaths.includes(searchable.name)) {
-        return [];
+        return () => [];
       }
 
-      return matches
-        .flatMap((match, index) => match.map(m => ({
-          ngrams: m.ngrams,
-          source: analyzable.normalized[index],
-          lastNgram: m.ngrams[m.ngrams.length - 1],
-        })))
-        .filter(m => m.ngrams.length !== 0)
-        .map(match => {
-          const start = match.ngrams[0].index;
-          const stop = match.lastNgram.rindex;
+      return (analyzed: AnalyzedValueFullText, entryMatch: SimpleMatch, fieldIndex: number) => {
+        const source = analyzed.normalized[fieldIndex];
+        const lastNgram = entryMatch.ngrams[entryMatch.ngrams.length - 1];
+        const start = entryMatch.ngrams[0].index;
+        const stop = lastNgram.rindex;
 
-          const value = match.source.slice(start, stop);
+        const value = source.slice(start, stop);
+        const leftPadding = source.slice(Math.max(0, start - options.maxPadding), start);
+        const rightPadding = source.slice(stop, stop + options.maxPadding);
 
-          const leftPadding = match.source.slice(Math.max(0, start - options.maxPadding), start);
-          const rightPadding = match.source.slice(stop, stop + options.maxPadding);
-
-          return `${leftPadding}${options.preTag}${value}${options.postTag}${rightPadding}`;
-        });
+        return `${leftPadding}${options.preTag}${value}${options.postTag}${rightPadding}`;
+      }
     };
   };
 }
@@ -134,13 +149,11 @@ const autocompleteStrategies: Record<PlainAnalysisMode, (entry: NGram[], index: 
 };
 
 function extractContext(query: NGram[]): string {
-  const [, ...context] = [...query]
-    .reverse();
-  const str = context
-    .map(n => n.value)
-    .join(' ');
-
-  return str.length > 0 ? `${str} ` : str;
+  let str = '';
+  for (let i = query.length - 2; i >= 0; i--) {
+    str += query[i].value + ' ';
+  }
+  return str;
 }
 
 export function createAutocompleteSuggestionStrategy<T extends object>(options: {
@@ -157,40 +170,42 @@ export function createAutocompleteSuggestionStrategy<T extends object>(options: 
 
     const autocompleteStrategy = autocompleteStrategies[options.mode];
 
-    return (searchable, analyzable, matches) => {
+    return (searchable) => {
       if (!highlightPaths.includes(searchable.name)) {
-        return [];
+        return () => [];
       }
 
       const context = extractContext(searchable.query);
 
-      return matches
-        .flatMap((match, index) => match.map(m => ({
-          ngrams: m.ngrams,
-          entry: analyzable.entries[index],
-          lastNgram: m.ngrams[m.ngrams.length - 1],
-        })))
-        .filter(m => m.ngrams.length !== 0)
-        .map((match) => {
-          const suggestionIndex = match.entry
-            .findIndex(ngrams => ngrams.index === match.lastNgram.index);
-          const suggestion = autocompleteStrategy(match.entry, suggestionIndex)
-            .filter(n => !!n)
-            .map(n => n.value)
-            .join(' ');
+      return (analyzed: AnalyzedValueFullText, entryMatch: SimpleMatch, fieldIndex: number) => {
+        const source = analyzed.entries[fieldIndex];
+        const lastNgram = entryMatch.ngrams[entryMatch.ngrams.length - 1];
 
-          if (options.mode === 'oneTermWithContext') {
-            return {
-              text: `${context}${suggestion}`,
-              queryPlusText: `${options.preTag ?? ''}${context}${suggestion}${options.postTag ?? ''}`,
-            };
+        const suggestionIndex = source.findIndex(ngrams => ngrams.index === lastNgram.index);
+        const suggestions = autocompleteStrategy(source, suggestionIndex);
+
+        let suggestion = '';
+        for (let i = 0; i < suggestions.length; i++){
+          const s = suggestions[i];
+          if (s) {
+            suggestion += i < suggestions.length - 1
+              ? s.value + ' '
+              : s.value;
           }
+        }
 
+        if (options.mode === 'oneTermWithContext') {
+          return {
+            text: `${context}${suggestion}`,
+            queryPlusText: `${options.preTag ?? ''}${context}${suggestion}${options.postTag ?? ''}`,
+          };
+        } else {
           return {
             text: suggestion,
             queryPlusText: `${context}${options.preTag ?? ''}${suggestion}${options.postTag ?? ''}`,
           };
-        });
+        }
+      }
     };
   };
 }

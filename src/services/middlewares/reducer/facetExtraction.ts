@@ -9,7 +9,9 @@ export function useFacetExtraction<T extends object, Keys extends ODataSelect<T>
     schemaService.assertCommands({facetCommands});
 
     return (acc, cur) => {
-      acc.facets = facetCommands.reduce((a, c) => c.apply(a, cur.document.original), acc.facets);
+      for (const command of facetCommands) {
+        acc.facets = command.apply(acc.facets, cur.document.original);
+      }
 
       return next(acc, cur);
     };

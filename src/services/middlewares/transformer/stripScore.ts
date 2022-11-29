@@ -5,7 +5,11 @@ import type { ResultsMiddleware } from '../../searchBackend';
 export function useStripScore<T extends object, Keys extends ODataSelect<T>>(): ResultsMiddleware<T, Keys> {
   return (next) => {
     return (reduction, results) => {
-      results.value = (results.value as any[]).map(({['@search.score']: score, ...rest}) => rest) as typeof results.value;
+      const strippedValue: typeof results.value = [];
+      for (const {['@search.score']: score, ...rest} of results.value as any[]) {
+        strippedValue.push(rest);
+      }
+      results.value = strippedValue;
 
       return next(reduction, results);
     };

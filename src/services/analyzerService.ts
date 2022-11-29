@@ -1,9 +1,8 @@
 import AsciiFolder from 'fold-to-ascii';
 
-import enStopwords from '../stopwords/en.json';
 import type { GeoPoint } from '../lib/geo';
 import { isGeoJsonPoint, isWKTPoint, makeGeoPointFromGeoJSON, makeGeoPointFromWKT } from '../lib/geo';
-import { distribute, sum } from '../lib/iterables';
+import { distribute } from '../lib/iterables';
 import { _never } from '../lib/_never';
 import { getValue } from '../lib/objects';
 import { flatValue } from './utils';
@@ -13,6 +12,7 @@ import { SchemaService } from './schema';
 import * as Parsers from '../parsers';
 import { SimpleActions } from '../parsers/query-simple';
 
+import enStopwords from '../stopwords/en.json';
 const defaultStopwords = enStopwords;
 
 export type AnalyzerIdKeyword = 'keyword';
@@ -55,31 +55,40 @@ export interface AnalyzedValueGeo {
 export type AnalyzedValue = AnalyzedValueFullText | AnalyzedValueGeo;
 export type AnalyzedDocument = Partial<Record<string, AnalyzedValue>>;
 
-function toNGram(value: unknown, index: number): NGram {
-  const str = `${value}`;
-  return { value: str, index, rindex: index + str.length };
+function toNGram(value: string, index: number): NGram {
+  return { value, index, rindex: index + value.length };
 }
 
-export function tokenize(value: string, splitter: RegExp | null): NGram[] {
-  if (!splitter) {
-    return [toNGram(value, 0)];
-  }
+export function createTokenizer(options: {
+  splitter?: RegExp,
+  normalizer?: (value: string) => string,
+  filter?: (value: string) => boolean,
+} = {}): (value: string) => NGram[] {
+  return (value) => {
+    if (!options.splitter) {
+      return [toNGram(value, 0)];
+    }
 
-  const tokens = value.split(splitter);
-  if (tokens.length === 0) {
-    return [];
-  }
+    const tokens = value.split(options.splitter);
+    if (tokens.length === 0) {
+      return [];
+    }
 
-  let index = 0;
-  return distribute(tokens, 2)
-    .map(([token, separator]) => {
-      const ngram = toNGram(token, index);
+    let index = 0;
+    const results: NGram[] = [];
+    for (const [token, separator] of distribute(tokens, 2)) {
+      const ngram = toNGram(options.normalizer?.(token) ?? token, index);
       index += token.length + (separator?.length ?? 0);
-      return ngram;
-    })
-    // String.split will always introduce an empty value if the string starts/ends with the separator.
-    // Filtering need to be done after we generated all the indices.
-    .filter(ngram => !!ngram.value);
+
+      // String.split will always introduce an empty value if the string starts/ends with the separator.
+      // Filtering need to be done after we generated all the indices.
+      if (ngram.value && (options.filter?.(ngram.value) ?? true)) {
+        results.push(ngram);
+      }
+    }
+
+    return results;
+  }
 }
 
 const simpleSeparatorRegex = /([^\p{L}\p{N}]+)/u;
@@ -90,28 +99,41 @@ const whitespaceSeparatorRegex = /(\p{White_Space}+)/u;
 export type AnalyzerFn = (value: string) => NGram[];
 
 const analyzers: Record<AnalyzerId, AnalyzerFn> = {
-  'keyword': value => tokenize(value, null),
-  'pattern': value => tokenize(value, simpleSeparatorRegex),
-  'simple': value => tokenize(value, simpleSeparatorRegex)
-    .map(t => toNGram(t.value.toLowerCase(), t.index)),
+  'keyword': createTokenizer(),
+  'pattern': createTokenizer({
+    splitter: simpleSeparatorRegex,
+  }),
+  'simple': createTokenizer({
+    splitter: simpleSeparatorRegex,
+    normalizer: v => v.toLowerCase(),
+  }),
   // TODO: Implement lucene tokenizer
-  'standard.lucene': value => tokenize(value, standardSeparatorRegex)
-    .map(t => toNGram(t.value.toLowerCase(), t.index))
-    .filter(t => !defaultStopwords.includes(t.value)),
+  'standard.lucene': createTokenizer({
+    splitter: standardSeparatorRegex,
+    normalizer: v => v.toLowerCase(),
+    filter: v => !defaultStopwords.includes(v),
+  }),
   'standard': value => analyzers['standard.lucene'](value),
   // TODO: Implement lucene tokenizer
-  'standardasciifolding.lucene': value => tokenize(value, standardSeparatorRegex)
-    .map(t => toNGram(t.value.toLowerCase(), t.index))
-    .filter(t => !defaultStopwords.includes(t.value))
-    .map(t => toNGram(AsciiFolder.foldMaintaining(t.value), t.index)),
-  'stop': value => tokenize(value, simpleSeparatorRegex)
-    .map(t => toNGram(t.value.toLowerCase(), t.index))
-    .filter(t => !defaultStopwords.includes(t.value)),
-  'whitespace': value => tokenize(value, whitespaceSeparatorRegex),
+  'standardasciifolding.lucene': createTokenizer({
+    splitter: standardSeparatorRegex,
+    normalizer: v => AsciiFolder.foldMaintaining(v).toLowerCase(),
+    filter: v => !defaultStopwords.includes(v),
+  }),
+  'stop': createTokenizer({
+    splitter: simpleSeparatorRegex,
+    normalizer: v => v.toLowerCase(),
+    filter: v => !defaultStopwords.includes(v),
+  }),
+  'whitespace': createTokenizer({
+    splitter: whitespaceSeparatorRegex,
+  }),
   // HACK: Since we do not support custom analyzers yet, we use the en analyzer as a case-sensitive variant to standard.
-  'en.lucene': value => tokenize(value, standardSeparatorRegex)
-    .filter(t => !enStopwords.includes(t.value.toLowerCase()))
-    .map(t => toNGram(AsciiFolder.foldMaintaining(t.value), t.index)),
+  'en.lucene': createTokenizer({
+    splitter: standardSeparatorRegex,
+    normalizer: v => AsciiFolder.foldMaintaining(v).toLowerCase(),
+    filter: v => !enStopwords.includes(v),
+  }),
   'ms.lucene': value => analyzers['en.lucene'](value),
 };
 
@@ -261,13 +283,22 @@ function toPoint(value: unknown): GeoPoint | null {
       : null;
 }
 
-function analyzeFullText(searchable: SearchableField, values: unknown[]) {
-  const analyzerId = searchable.indexAnalyzer ?? searchable.analyzer ?? 'standard';
-  const analyzer = analyzers[analyzerId];
+function analyzeValues(values: unknown[], analyzer: AnalyzerFn) {
+  const normalized: string[] = [];
+  const entries: NGram[][] = [];
+  let length = 0;
 
-  const normalized = values.map(v => `${v}`);
-  const entries = normalized.map(s => analyzer(s));
-  const length = sum(entries.flatMap(e => e.flatMap(ngram => ngram.value.length)) ?? []);
+  for (const v of values) {
+    const normal = `${v}`;
+    const entry = analyzer(normal);
+
+    normalized.push(normal);
+    entries.push(entry);
+
+    for (const ngram of entry) {
+      length += ngram.value.length;
+    }
+  }
 
   return {
     kind: 'fullText',
@@ -276,6 +307,12 @@ function analyzeFullText(searchable: SearchableField, values: unknown[]) {
     entries,
     length,
   } as AnalyzedValueFullText;
+}
+function analyzeFullText(searchable: SearchableField, values: unknown[]) {
+  const analyzerId = searchable.indexAnalyzer ?? searchable.analyzer ?? 'standard';
+  const analyzer = analyzers[analyzerId];
+
+  return analyzeValues(values, analyzer);
 }
 
 function analyzeBasic(field: SearchableField | FilterableField, values: unknown[]) {
@@ -292,17 +329,7 @@ function analyzeBasic(field: SearchableField | FilterableField, values: unknown[
     case 'Collection(Edm.Double)':
     case 'Collection(Edm.Boolean)':
     case 'Collection(Edm.DateTimeOffset)': {
-      const normalized = values.map(v => `${v}`);
-      const entries = normalized.map(analyzers['keyword']);
-      const length = sum(entries.flatMap(e => e.flatMap(ngram => ngram.value.length)) ?? []);
-
-      return {
-        kind: 'fullText',
-        values,
-        normalized,
-        entries,
-        length,
-      } as AnalyzedValueFullText;
+      return analyzeValues(values, analyzers['keyword']);
     }
     case 'Edm.GeographyPoint':
     case 'Collection(Edm.GeographyPoint)': {
