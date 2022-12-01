@@ -6,7 +6,7 @@ import { SearchBackend } from './searchBackend';
 import { Scorer } from './scorer';
 
 import { useFiltering } from './middlewares/reducer/filtering';
-import { createHighlightSuggestionStrategy, useLuceneSearch } from './middlewares/reducer/luceneSearch';
+import { createReplacementSuggestionStrategy, useLuceneSearch } from './middlewares/reducer/luceneSearch';
 import { useSelect } from './middlewares/reducer/select';
 import { useScoringProfiles } from './middlewares/reducer/scoringProfiles';
 import { useSuggestResult } from './middlewares/reducer/suggestResult';
@@ -55,19 +55,18 @@ export class SuggestEngine<T extends object> {
   public suggest<Keys extends ODataSelect<T>>(request: SuggestRequest<T, Keys>): SuggestDocumentsResult<ODataSelectResult<T, Keys>> {
     const documentMiddlewares = [
       ...(request.filter ? [useFiltering<T, Keys>(request.filter)] : []),
-      ...(request.search ? [useLuceneSearch<T, Keys>({
+      useLuceneSearch<T, Keys>({
         searchFields: request.searchFields ?? '*',
         queryingStrategy: createPlainQueryStrategy({
           search: request.search,
-          analysisMode: 'oneTerm',
+          analysisMode: 'oneTermWithContext',
         }),
-        suggestionStrategy: createHighlightSuggestionStrategy<T>({
+        suggestionStrategy: createReplacementSuggestionStrategy<T>({
           highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
           preTag: request.highlightPreTag ?? '',
           postTag: request.highlightPostTag ?? '',
-          maxPadding: 30,
         }),
-      })] : []),
+      }),
       useSelect<T, Keys>(request.select ?? [this.keyFieldProvider().name as Keys]),
       useScoringProfiles<T, Keys>({ scoringStrategies: Scorer.nullStrategy }),
       useSuggestResult<T, Keys>(),

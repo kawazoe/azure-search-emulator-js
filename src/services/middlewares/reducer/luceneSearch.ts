@@ -12,12 +12,12 @@ import {
   PlainAnalysisMode,
   QueryAnalyzisResult,
   QueryingStrategy,
-  SimpleMatch,
+  SimpleMatches,
 } from '../../analyzerService';
 
 export type AnalyzedSearchable = Searchable & QueryAnalyzisResult;
 export type SuggestionStrategy<T extends object> =
-  (schemaService: SchemaService<T>) => (searchable: AnalyzedSearchable) => (analyzed: AnalyzedValueFullText, entryMatch: SimpleMatch, fieldIndex: number) => unknown;
+  (schemaService: SchemaService<T>) => (searchable: AnalyzedSearchable) => (suggestionsAccumulator: unknown[], analyzed: AnalyzedValueFullText, entryMatch: SimpleMatches, entryIndex: number) => void;
 export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(options: {
   searchFields: string,
   queryingStrategy: QueryingStrategy,
@@ -50,7 +50,7 @@ export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(o
         }
 
         const matchedValues: string[] = [];
-        const searchableSuggestions: unknown[] = [];
+        const suggestionsAccumulator: unknown[] = [];
         let matchedLength = 0;
         let matchedScore = 0;
         let matchCount = 0;
@@ -63,10 +63,6 @@ export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(o
           }
 
           for (const match of matches) {
-            if (match.ngrams.length === 0) {
-              continue;
-            }
-
             for (const ngram of match.ngrams) {
               matchedValues.push(ngram.value);
               matchedLength += ngram.value.length;
@@ -74,9 +70,9 @@ export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(o
 
             matchedScore += match.score;
             matchCount++;
-
-            searchableSuggestions.push(searchable.suggester(analyzed, match, i));
           }
+
+          searchable.suggester(suggestionsAccumulator, analyzed, matches, i);
         }
 
         if (matchedValues.length <= 0) {
@@ -88,7 +84,7 @@ export function useLuceneSearch<T extends object, Keys extends ODataSelect<T>>(o
           score: matchedScore,
         });
 
-        suggestions[searchable.name] = searchableSuggestions;
+        suggestions[searchable.name] = suggestionsAccumulator;
         features[searchable.name] = {
           uniqueTokenMatches: uniq(matchedValues).length,
           similarityScore: analyzed.length === 0 ? 0 : (matchedLength / analyzed.length),
@@ -123,40 +119,122 @@ export function createHighlightSuggestionStrategy<T extends object>(options: {
 
     return (searchable) => {
       if (!highlightPaths.includes(searchable.name)) {
-        return () => [];
+        return () => null;
       }
 
-      return (analyzed: AnalyzedValueFullText, entryMatch: SimpleMatch, fieldIndex: number) => {
-        const source = analyzed.normalized[fieldIndex];
-        const lastNgram = entryMatch.ngrams[entryMatch.ngrams.length - 1];
-        const start = entryMatch.ngrams[0].index;
-        const stop = lastNgram.rindex;
+      return (suggestionsAccumulator, analyzed, entryMatch, entryIndex) => {
+        const source = analyzed.normalized[entryIndex];
 
-        const value = source.slice(start, stop);
-        const leftPadding = source.slice(Math.max(0, start - options.maxPadding), start);
-        const rightPadding = source.slice(stop, stop + options.maxPadding);
+        for (const match of entryMatch) {
+          const lastNgram = match.ngrams[match.ngrams.length - 1];
+          const start = match.ngrams[0].index;
+          const stop = lastNgram.rindex;
 
-        return `${leftPadding}${options.preTag}${value}${options.postTag}${rightPadding}`;
+          const value = source.slice(start, stop);
+          const leftPadding = source.slice(Math.max(0, start - options.maxPadding), start);
+          const rightPadding = source.slice(stop, stop + options.maxPadding);
+
+          suggestionsAccumulator.push(`${leftPadding}${options.preTag}${value}${options.postTag}${rightPadding}`);
+        }
       }
     };
   };
 }
 
-const autocompleteStrategies: Record<PlainAnalysisMode, (entry: NGram[], index: number) => NGram[]> = {
-  oneTerm: (entry, index) => [entry[index]],
-  twoTerms: (entry, index) => [entry[index], entry[index + 1]],
-  oneTermWithContext: (entry, index) => [entry[index]],
-};
+export function createReplacementSuggestionStrategy<T extends object>(options: {
+  highlight: string,
+  preTag: string,
+  postTag: string,
+}): SuggestionStrategy<T> {
+  return (schemaService) => {
+    const highlightCommand = Parsers.highlight.parse(options.highlight);
+    schemaService.assertCommands({ highlightCommand });
 
-function extractContext(query: NGram[]): string {
-  let str = '';
-  for (let i = query.length - 2; i >= 0; i--) {
-    str += query[i].value + ' ';
+    const highlightPaths = highlightCommand.toPaths();
+
+    return (searchable) => {
+      if (!highlightPaths.includes(searchable.name)) {
+        return () => null;
+      }
+
+      return (suggestionsAccumulator, analyzed, entryMatch, entryIndex) => {
+        const source = analyzed.normalized[entryIndex];
+        let result = source;
+
+        for (let i = entryMatch.length - 1; i >= 0; i--){
+          const match = entryMatch[i];
+          const lastNgram = match.ngrams[match.ngrams.length - 1];
+          const start = match.ngrams[0].index;
+          const stop = lastNgram.rindex;
+
+          const value = source.slice(start, stop);
+
+          result = `${result.substring(0, start)}${options.preTag}${value}${options.postTag}${result.substring(stop)}`;
+        }
+
+        suggestionsAccumulator.push(result);
+      }
+    };
+  };
+}
+
+const autocompleteStrategies: Record<PlainAnalysisMode, (match: NGram[], source: string, entry: NGram[]) => string> = {
+  oneTerm: (match) => match[match.length - 1].value,
+  twoTerms: (match, source, entry) => {
+    const last = match[match.length - 1];
+    const peek = entry.find(e => e.index > last.index);
+    return peek
+      ? `${last.value}${source.slice(last.rindex, peek.index)}${peek.value}`
+      : last.value;
+  },
+  oneTermWithContext: (match) => match[match.length - 1].value,
+};
+const mappingStrategies: Record<PlainAnalysisMode, (options: {
+  query: NGram[],
+  search: string,
+  preTag: string,
+  postTag: string
+}) => (suggestion: string) => { text: string, queryPlusText: string }> = {
+  oneTerm: (options) => {
+    const queryStr = options.query.length > 0
+      ? options.search.slice(0, options.query[options.query.length - 1].index)
+      : '';
+    return (suggestion) => ({
+      text: suggestion,
+      queryPlusText: `${queryStr}${options.preTag ?? ''}${suggestion}${options.postTag ?? ''}`,
+    });
+  },
+  twoTerms: (options) => mappingStrategies.oneTerm(options),
+  oneTermWithContext: (options) => {
+    const context = reconstructString(options.search, options.query);
+    return (suggestion) => ({
+      text: `${context}${suggestion}`,
+      queryPlusText: `${options.preTag ?? ''}${context}${suggestion}${options.postTag ?? ''}`,
+    });
   }
-  return str;
+}
+
+function reconstructString(source: string, query: NGram[]): string {
+  if (query.length <= 0) {
+    return '';
+  }
+
+  const analyzed = [...query];
+  const last = analyzed.pop();
+
+  // Cannot depend on context.length since ngram's value.length might not match (rindex - index) when ascii folded.
+  let rindex = 0;
+  let context = ''
+  for (const ngram of analyzed) {
+    context += source.slice(rindex, ngram.index) + ngram.value;
+    rindex = ngram.rindex;
+  }
+
+  return context + source.slice(rindex, last!.index);
 }
 
 export function createAutocompleteSuggestionStrategy<T extends object>(options: {
+  search: string,
   highlight: string,
   preTag: string,
   postTag: string,
@@ -169,41 +247,23 @@ export function createAutocompleteSuggestionStrategy<T extends object>(options: 
     const highlightPaths = highlightCommand.toPaths();
 
     const autocompleteStrategy = autocompleteStrategies[options.mode];
+    const mappingStrategy = mappingStrategies[options.mode];
 
     return (searchable) => {
       if (!highlightPaths.includes(searchable.name)) {
-        return () => [];
+        return () => null;
       }
 
-      const context = extractContext(searchable.query);
+      const mapper = mappingStrategy({ query: searchable.query, ...options });
 
-      return (analyzed: AnalyzedValueFullText, entryMatch: SimpleMatch, fieldIndex: number) => {
-        const source = analyzed.entries[fieldIndex];
-        const lastNgram = entryMatch.ngrams[entryMatch.ngrams.length - 1];
+      return (suggestionsAccumulator, analyzed, entryMatch, entryIndex) => {
+        const source = analyzed.normalized[entryIndex];
+        const entry = analyzed.entries[entryIndex];
 
-        const suggestionIndex = source.findIndex(ngrams => ngrams.index === lastNgram.index);
-        const suggestions = autocompleteStrategy(source, suggestionIndex);
+        for (const match of entryMatch) {
+          const suggestion = autocompleteStrategy(match.ngrams, source, entry);
 
-        let suggestion = '';
-        for (let i = 0; i < suggestions.length; i++){
-          const s = suggestions[i];
-          if (s) {
-            suggestion += i < suggestions.length - 1
-              ? s.value + ' '
-              : s.value;
-          }
-        }
-
-        if (options.mode === 'oneTermWithContext') {
-          return {
-            text: `${context}${suggestion}`,
-            queryPlusText: `${options.preTag ?? ''}${context}${suggestion}${options.postTag ?? ''}`,
-          };
-        } else {
-          return {
-            text: suggestion,
-            queryPlusText: `${context}${options.preTag ?? ''}${suggestion}${options.postTag ?? ''}`,
-          };
+          suggestionsAccumulator.push(mapper(suggestion));
         }
       }
     };

@@ -125,8 +125,8 @@ describe('AutocompleteEngine', () => {
       const results = sut.autocomplete({ suggesterName: 'sg', search: 'a long', autocompleteMode: 'twoTerms', highlightPreTag: 'PRE', highlightPostTag: 'POST' });
 
       expect(results.value).toEqual([
-        { text: 'longer fullname', queryPlusText: 'a PRElonger fullnamePOST' },
-        { text: 'long name', queryPlusText: 'a PRElong namePOST' },
+        { text: 'longer   fullname', queryPlusText: 'a PRElonger   fullnamePOST' },
+        { text: 'long \t name', queryPlusText: 'a PRElong \t namePOST' },
       ]);
     });
 

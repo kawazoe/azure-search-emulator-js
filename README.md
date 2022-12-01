@@ -267,17 +267,17 @@ service to spin up on your dev machine when testing, or demoing, your applicatio
 ## Benchmarks
 ```
 describe SearchEngine
-  bench large query (2_500 documents)
-  => total: 2647.13ms | samples/runs: 91/100 | ops/sec: 37.78 ±4.33ms @ 3σ
-     mean: 26.47ms | mode: 26ms | min: 22.21ms/22.21ms | max: 30.86ms/43.1ms
+  bench large query
+  => total: 2484.45ms | samples/runs: 89/100 | ops/sec: 40.25 ±3.53ms @ 3σ
+     mean: 24.84ms | mode: 24.1ms | min: 21.03ms/21.49ms | max: 28.55ms/37.54ms
 describe SuggestEngine
-  bench large query (2_500 documents)
-  => total: 1459.37ms | samples/runs: 96/100 | ops/sec: 68.52 ±2.64ms @ 3σ
-     mean: 14.59ms | mode: 15ms | min: 12.07ms/12.07ms | max: 17.36ms/25.76ms
+  bench large query
+  => total: 1587.72ms | samples/runs: 95/100 | ops/sec: 62.98 ±4.65ms @ 3σ
+     mean: 15.88ms | mode: 15ms | min: 12.29ms/12.29ms | max: 21.59ms/37.56ms
 describe AutocompleteEngine
-  bench large query (2_500 documents)
-  => total: 1221.65ms | samples/runs: 41/100 | ops/sec: 81.86 ±0.69ms @ 3σ
-     mean: 12.22ms | mode: 13ms | min: 10.1ms/11.53ms | max: 12.91ms/9.85ms
+  bench large query
+  => total: 1284.09ms | samples/runs: 97/100 | ops/sec: 77.88 ±2.63ms @ 3σ
+     mean: 12.84ms | mode: 11ms | min: 10.13ms/10.13ms | max: 15.4ms/23.59ms
 ```
 
 ### Hardware

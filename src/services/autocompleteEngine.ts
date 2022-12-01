@@ -12,6 +12,7 @@ import { useCoverage } from './middlewares/transformer/coverage';
 import { useLimiterMiddleware } from './middlewares/transformer/limiter';
 import { useStripScore } from './middlewares/transformer/stripScore';
 import { PlainAnalysisMode, createPlainQueryStrategy } from './analyzerService';
+import { useUniq } from './middlewares/transformer/uniq';
 
 export interface AutoCompleteRequest {
   autocompleteMode?: PlainAnalysisMode;
@@ -44,25 +45,27 @@ export class AutocompleteEngine<T extends object> {
   public autocomplete(request: AutoCompleteRequest): AutoCompleteDocumentResult {
     const documentMiddlewares = [
       ...(request.filter ? [useFiltering<T, '*'>(request.filter)] : []),
-      ...(request.search ? [useLuceneSearch<T, '*'>({
+      useLuceneSearch<T, '*'>({
         searchFields: request.searchFields ?? '*',
         queryingStrategy: createPlainQueryStrategy({
           search: request.search,
           analysisMode: request.autocompleteMode ?? 'oneTerm'
         }),
         suggestionStrategy: createAutocompleteSuggestionStrategy<T>({
+          search: request.search,
           highlight: request.searchFields ?? this.suggesterProvider(request.suggesterName).fields.join(', '),
           preTag: request.highlightPreTag ?? '',
           postTag: request.highlightPostTag ?? '',
           mode: request.autocompleteMode ?? 'oneTerm',
         }),
-      })] : []),
+      }),
       useScoringProfiles<T, '*'>({ scoringStrategies: Scorer.nullStrategy }),
       useAutocompleteResult<T, '*'>(),
     ];
 
     const resultsMiddlewares = [
       useOrderBy<T, '*'>('search.score() desc'),
+      useUniq<T, '*', AutocompleteResult>((v) => v.text),
       ...(request.minimumCoverage ? [useCoverage<T, '*'>()] : []),
       useLimiterMiddleware<T, '*'>(request.top && Math.min(request.top, maxPageSize) || defaultPageSize),
       useStripScore<T, '*'>(),
